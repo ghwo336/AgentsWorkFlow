@@ -1,0 +1,9 @@
+.claude
+.git
+.next
+.env
+node_modules
+npm-debug.log*
+packages/*/.next
+packages/*/node_modules
+workspaces

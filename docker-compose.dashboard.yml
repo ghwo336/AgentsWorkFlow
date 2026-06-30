@@ -1,0 +1,21 @@
+services:
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${DASHBOARD_PORT:-3737}:3737"
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+      DATABASE_URL: ${DATABASE_URL:-file:./prisma/dev.db}
+      ORCH_INTERNAL_URL: ${ORCH_INTERNAL_URL:-http://host.docker.internal:4000}
+      DASHBOARD_AUTH_REQUIRED: ${DASHBOARD_AUTH_REQUIRED:-true}
+      DASHBOARD_USERNAME: ${DASHBOARD_USERNAME:?set DASHBOARD_USERNAME}
+      DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD:?set DASHBOARD_PASSWORD}
+    volumes:
+      - ./prisma:/app/prisma
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
