@@ -1,0 +1,16 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["verdict", "reason"],
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "enum": ["PASS", "FAIL"],
+      "description": "PASS only if the change is correct, complete, and safe to commit. Otherwise FAIL."
+    },
+    "reason": {
+      "type": "string",
+      "description": "Concise explanation. On FAIL, list the concrete problems the builder must fix."
+    }
+  }
+}

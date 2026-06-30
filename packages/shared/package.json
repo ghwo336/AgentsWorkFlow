@@ -1,0 +1,12 @@
+{
+  "name": "@agent-loop/shared",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./db": "./src/db.ts",
+    "./types": "./src/types.ts",
+    "./pricing": "./src/pricing.ts"
+  }
+}

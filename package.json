@@ -1,0 +1,27 @@
+{
+  "name": "agent-loop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/shared",
+    "packages/orchestrator",
+    "packages/dashboard"
+  ],
+  "scripts": {
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "orchestrator": "npm -w @agent-loop/orchestrator run dev",
+    "dashboard": "npm -w @agent-loop/dashboard run dev",
+    "dev": "concurrently -n orch,dash -c blue,green \"npm run orchestrator\" \"npm run dashboard\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "prisma": "^6.19.3",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.3"
+  }
+}

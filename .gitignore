@@ -1,0 +1,11 @@
+node_modules/
+.next/
+dist/
+*.log
+*.db
+*.db-journal
+.env
+workspaces/
+.codex-tmp/
+.claude/settings.local.json
+*.tsbuildinfo

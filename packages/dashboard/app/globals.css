@@ -1,0 +1,113 @@
+:root {
+  --bg: #0d1117;
+  --panel: #161b22;
+  --border: #30363d;
+  --text: #e6edf3;
+  --muted: #8b949e;
+  --accent: #2f81f7;
+  --green: #3fb950;
+  --red: #f85149;
+  --yellow: #d29922;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.nav {
+  display: flex; gap: 16px; align-items: center;
+  padding: 12px 20px; border-bottom: 1px solid var(--border);
+}
+.nav b { font-size: 15px; }
+
+.wrap { max-width: 1100px; margin: 0 auto; padding: 20px; }
+
+.panel {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 8px; padding: 16px; margin-bottom: 16px;
+}
+
+.row { display: flex; gap: 12px; align-items: center; }
+.spread { justify-content: space-between; }
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+
+.badge {
+  display: inline-block; padding: 2px 8px; border-radius: 999px;
+  font-size: 12px; border: 1px solid var(--border);
+}
+.b-committed { color: var(--green); border-color: var(--green); }
+.b-rejected, .b-failed { color: var(--red); border-color: var(--red); }
+.b-building, .b-verifying, .b-planning { color: var(--yellow); border-color: var(--yellow); }
+.b-awaiting_approval { color: var(--accent); border-color: var(--accent); }
+
+button {
+  background: var(--accent); color: white; border: none;
+  padding: 8px 14px; border-radius: 6px; cursor: pointer; font: inherit;
+}
+button.ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
+button.danger { background: var(--red); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+
+textarea, input {
+  width: 100%; background: #0d1117; color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px; padding: 8px; font: inherit;
+}
+
+.log {
+  font-size: 12.5px; max-height: 420px; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.log .line { display: flex; gap: 8px; }
+.log .ph { color: var(--muted); min-width: 64px; }
+.log .err { color: var(--red); }
+.log .warn { color: var(--yellow); }
+
+pre.diff {
+  background: #0d1117; border: 1px solid var(--border); border-radius: 6px;
+  padding: 12px; overflow-x: auto; font-size: 12px; max-height: 400px;
+}
+.diff .add { color: var(--green); }
+.diff .del { color: var(--red); }
+
+table { width: 100%; border-collapse: collapse; }
+td, th { text-align: left; padding: 8px; border-bottom: 1px solid var(--border); }
+
+/* Horizontal scroll container for wide tables on narrow screens. */
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+/* ── Responsive (mobile) ───────────────────────────────────────── */
+@media (max-width: 720px) {
+  body { font-size: 13px; }
+
+  .wrap { padding: 14px; }
+
+  /* Nav wraps; drop the decorative pipeline subtitle to save width. */
+  .nav { flex-wrap: wrap; gap: 8px 14px; padding: 10px 14px; }
+  .nav > .small { display: none; }
+
+  .panel { padding: 14px; border-radius: 6px; }
+
+  /* Two-column workspace (sidebar + detail) stacks vertically. */
+  .cols { flex-direction: column; }
+  .cols > .side { flex: 1 1 auto !important; width: 100%; }
+
+  /* Usage headline cards: two per row instead of one cramped strip. */
+  .stats { flex-wrap: wrap; }
+  .stats > .panel { flex: 1 1 45% !important; min-width: 140px; }
+
+  /* Keep table columns legible; scroll horizontally inside .table-scroll. */
+  .table-scroll table { min-width: 560px; }
+
+  /* Timeline lines wrap instead of forcing the page wider than the screen. */
+  .log .line { flex-wrap: wrap; }
+  .log .line .ph { min-width: 52px; }
+}

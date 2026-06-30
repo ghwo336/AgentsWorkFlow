@@ -1,0 +1,86 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// A first-class project: groups runs and can exist before any run is created.
+/// Runs reference it by name (Run.project). Created explicitly from the
+/// dashboard, or auto-created (upserted) when a run names a new project.
+model Project {
+  name      String   @id
+  createdAt DateTime @default(now())
+}
+
+/// One end-to-end task: brief -> plan -> build -> verify -> commit
+model Run {
+  id        String   @id @default(cuid())
+  project   String   @default("default") // logical project this run belongs to (for grouping costs)
+  title     String
+  brief     String // the original planning input from the user
+  status    String   @default("planning") // planning | awaiting_approval | building | verifying | committed | rejected | failed | cancelled
+  plan      String? // approved plan text (from Opus)
+  targetDir String? // working copy path for this run
+  commit    String? // final commit hash on success
+  error     String? // terminal error message, if any
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  events   Event[]
+  verdicts Verdict[]
+  usages   Usage[]
+
+  @@index([project])
+}
+
+/// One model invocation's token usage, with the API-equivalent cost in USD.
+/// Codex runs on a ChatGPT subscription (no API billing) — its cost is the
+/// hypothetical API-rate equivalent, for apples-to-apples comparison.
+model Usage {
+  id           String   @id @default(cuid())
+  runId        String
+  run          Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  engine       String // "claude" | "codex"
+  model        String // e.g. claude-opus-4-8, claude-sonnet-4-6, gpt-5.5
+  phase        String // plan | build | verify
+  inputTokens  Int      @default(0) // uncached input tokens
+  outputTokens Int      @default(0)
+  cacheRead    Int      @default(0) // cached input tokens (read)
+  cacheWrite   Int      @default(0) // cache-creation tokens (write)
+  costUsd      Float    @default(0) // API-equivalent cost in USD, computed at record time
+  ts           DateTime @default(now())
+
+  @@index([runId])
+}
+
+/// Append-only timeline of everything that happens in a run.
+model Event {
+  id      String   @id @default(cuid())
+  runId   String
+  run     Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  phase   String // plan | approval | build | verify | commit | system
+  level   String   @default("info") // info | warn | error
+  model   String? // opus | sonnet | codex | null
+  message String
+  ts      DateTime @default(now())
+
+  @@index([runId])
+}
+
+/// Each codex verification attempt, including rejections with full reason.
+model Verdict {
+  id      String   @id @default(cuid())
+  runId   String
+  run     Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  attempt Int // 1-based verify attempt number
+  passed  Boolean
+  reason  String // codex's full explanation (esp. rejection reason)
+  diff    String? // snapshot of the diff that was reviewed
+  raw     String? // raw codex JSON output, for debugging
+  ts      DateTime @default(now())
+
+  @@index([runId])
+}
