@@ -3,6 +3,7 @@ import Fastify from "fastify";
 import { z } from "zod";
 import { prisma } from "@agent-loop/shared/db";
 import { bus } from "./bus.js";
+import { clarify } from "./chat.js";
 import { config } from "./config.js";
 import { resolveApproval, startRun } from "./runner.js";
 
@@ -45,6 +46,31 @@ app.post("/runs/:id/approve", async (req, reply) => {
     return reply.code(409).send({ error: "No run awaiting approval with that id." });
   }
   return { ok: true };
+});
+
+// Pre-plan requirements chat. Stateless: the client sends the whole thread and
+// gets Opus's next reply. No run is created until the user commits to a plan.
+const ChatSchema = z.object({
+  messages: z
+    .array(
+      z.object({
+        role: z.enum(["user", "assistant"]),
+        content: z.string().min(1),
+      })
+    )
+    .min(1),
+});
+app.post("/chat", async (req, reply) => {
+  const parsed = ChatSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return reply.code(400).send({ error: parsed.error.flatten() });
+  }
+  try {
+    const text = await clarify(parsed.data.messages);
+    return { reply: text };
+  } catch (err) {
+    return reply.code(502).send({ error: (err as Error)?.message ?? "chat failed" });
+  }
 });
 
 // Live event stream (Server-Sent Events).

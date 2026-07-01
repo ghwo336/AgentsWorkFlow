@@ -1,4 +1,4 @@
-import type { Project, ProjectSummary, Run, RunDetail, StartRunInput } from "./types";
+import type { ChatMessage, Project, ProjectSummary, Run, RunDetail, StartRunInput } from "./types";
 
 // Single place that talks to the backend HTTP API. Centralizes URL building,
 // the no-store cache policy, and consistent (Korean) error messages so pages
@@ -51,6 +51,10 @@ export const api = {
     getJson<Run[]>(`/api/runs?project=${encodeURIComponent(project)}`, "작업 목록 로드 실패"),
 
   getRun: (id: string) => getJson<RunDetail>(`/api/runs/${id}`, "작업 상세 로드 실패"),
+
+  // Pre-plan requirements chat: send the whole thread, get Opus's next reply.
+  chat: (messages: ChatMessage[]) =>
+    postJson<{ reply: string }>("/api/orchestrator/chat", { messages }, "대화 요청 실패"),
 
   startRun: (input: StartRunInput & { project: string }) =>
     postJson<{ id: string }>("/api/orchestrator/runs", input, "orchestrator 작업 시작 실패"),

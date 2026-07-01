@@ -48,7 +48,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "timeline", label: "타임라인" },
 ];
 
-export function RunViz({ steps }: { steps: Step[] }) {
+export function RunViz({ steps, status }: { steps: Step[]; status?: string }) {
   const [tab, setTab] = useState<Tab>("list");
 
   return (
@@ -70,7 +70,7 @@ export function RunViz({ steps }: { steps: Step[] }) {
       {steps.length === 0 ? (
         <div className="muted small">아직 단계가 없습니다.</div>
       ) : tab === "list" ? (
-        <StepListView steps={steps} />
+        <StepListView steps={steps} status={status} />
       ) : tab === "kanban" ? (
         <KanbanView steps={steps} />
       ) : tab === "graph" ? (
@@ -83,23 +83,36 @@ export function RunViz({ steps }: { steps: Step[] }) {
 }
 
 // ── 1) List (improved): progress bar + step rows ────────────────────────────
-function StepListView({ steps }: { steps: Step[] }) {
+function StepListView({ steps, status }: { steps: Step[]; status?: string }) {
   const now = Date.now();
   const done = steps.filter((s) => s.status === "passed").length;
   const failed = steps.filter((s) => s.status === "failed").length;
   const pct = Math.round((done / steps.length) * 100);
 
+  // Before approval the plan is the only step, so a step-based bar reads 100% —
+  // which looks like the whole task is done/approved. It isn't: the user still
+  // has to approve (or reject). Show a clear gated banner instead of a full bar.
+  const awaitingApproval = status === "awaiting_approval";
+
   return (
     <div>
-      <div className="row spread small muted" style={{ marginBottom: 6 }}>
-        <span>
-          {done}/{steps.length} 완료{failed ? ` · ${failed} 실패` : ""}
-        </span>
-        <span>{pct}%</span>
-      </div>
-      <div className="progress" style={{ marginBottom: 12 }}>
-        <div className="progress-fill" style={{ width: `${pct}%` }} />
-      </div>
+      {awaitingApproval ? (
+        <div className="approval-wait" style={{ marginBottom: 12 }}>
+          ⏳ 계획 수립 완료 — <b>승인 대기 중</b>. 승인하면 구현이 시작됩니다 (거절할 수도 있습니다).
+        </div>
+      ) : (
+        <>
+          <div className="row spread small muted" style={{ marginBottom: 6 }}>
+            <span>
+              {done}/{steps.length} 완료{failed ? ` · ${failed} 실패` : ""}
+            </span>
+            <span>{pct}%</span>
+          </div>
+          <div className="progress" style={{ marginBottom: 12 }}>
+            <div className="progress-fill" style={{ width: `${pct}%` }} />
+          </div>
+        </>
+      )}
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {steps.map((s) => (
           <div key={s.id} className="step-row">

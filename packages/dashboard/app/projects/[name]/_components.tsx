@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { Run, RunDetail, RunEvent, StartRunInput, Step } from "../../lib/types";
+import { api } from "../../lib/api";
+import { Markdown } from "../../lib/Markdown";
+import type { ChatMessage, Run, RunDetail, RunEvent, StartRunInput, Step } from "../../lib/types";
 import { agentById, agentForEvent, agentForStep, PixelAvatar, ROLE_COLOR } from "../../lib/agents";
 
 export function StatusBadge({ status }: { status: string }) {
@@ -66,9 +68,19 @@ export function RepoPicker({
   );
 }
 
-// New-task form. Owns its own input state and hands a completed request to the
-// parent; clears the title/brief once a run actually starts. The repo field is
-// pre-seeded from the project's remembered default (editable per run).
+// Turn the clarification thread into the run's brief. The planner reads this as
+// the "original request", so we hand it the whole conversation — the user's asks
+// and Opus's clarifications — not just the last line.
+function briefFromChat(messages: ChatMessage[]): string {
+  return messages
+    .map((m) => (m.role === "user" ? `[요청] ${m.content}` : `[정리] ${m.content}`))
+    .join("\n\n");
+}
+
+// New-task form. Starts as a conversation: the user chats with Opus to refine
+// what they want (interactive requirements gathering), and only then kicks off a
+// run — the whole thread becomes the brief. The repo field is pre-seeded from
+// the project's remembered default (editable per run). Clears once a run starts.
 export function NewTaskForm({
   onStart,
   defaultTargetDir = "",
@@ -79,10 +91,14 @@ export function NewTaskForm({
   repos: string[];
 }) {
   const [title, setTitle] = useState("");
-  const [brief, setBrief] = useState("");
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
   const [targetDir, setTargetDir] = useState(defaultTargetDir);
   const [workspaceName, setWorkspaceName] = useState("");
   const seeded = useRef(false);
+  const threadRef = useRef<HTMLDivElement>(null);
 
   // Seed the repo field once the project's default arrives (async), unless the
   // user already typed something.
@@ -93,38 +109,110 @@ export function NewTaskForm({
     if (defaultTargetDir) seeded.current = true;
   }, [defaultTargetDir, targetDir]);
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!title || !brief) return;
+  // Keep the newest turn in view as the thread grows.
+  useEffect(() => {
+    threadRef.current?.scrollTo(0, threadRef.current.scrollHeight);
+  }, [messages.length, sending]);
+
+  async function send() {
+    const text = input.trim();
+    if (!text || sending) return;
+    const next: ChatMessage[] = [...messages, { role: "user", content: text }];
+    setMessages(next);
+    setInput("");
+    setSending(true);
+    setChatError(null);
+    try {
+      const { reply } = await api.chat(next);
+      setMessages([...next, { role: "assistant", content: reply || "(응답이 비어 있습니다)" }]);
+    } catch (err) {
+      // Keep the user's message; let them retry. Surface the reason inline.
+      setChatError(err instanceof Error ? err.message : "대화 요청 실패");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function startRun() {
+    if (!title.trim() || messages.length === 0) return;
     const ok = await onStart({
-      title,
-      brief,
+      title: title.trim(),
+      brief: briefFromChat(messages),
       targetDir: targetDir || undefined,
       // Only meaningful for a fresh (temp) workspace, i.e. no repo selected.
       workspaceName: targetDir ? undefined : workspaceName.trim() || undefined,
     });
     if (ok) {
       setTitle("");
-      setBrief("");
+      setMessages([]);
+      setInput("");
       setWorkspaceName("");
+      setChatError(null);
     }
   }
 
   const usingDefault = !!defaultTargetDir && targetDir === defaultTargetDir;
+  const hasChat = messages.some((m) => m.role === "user");
+  const canStart = !!title.trim() && hasChat && !sending;
 
   return (
-    <form className="panel" onSubmit={submit}>
+    <div className="panel">
       <b>새 작업</b>
-      <div style={{ height: 8 }} />
+      <div className="muted small" style={{ marginTop: 4, marginBottom: 8 }}>
+        Opus와 대화하며 요구사항을 정리한 뒤 계획을 시작하세요.
+      </div>
       <input placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
-      <div style={{ height: 8 }} />
-      <textarea
-        placeholder="기획 / 요구사항을 적어주세요…"
-        rows={5}
-        value={brief}
-        onChange={(e) => setBrief(e.target.value)}
-      />
-      <div style={{ height: 8 }} />
+
+      <div className="chat-thread" ref={threadRef} style={{ marginTop: 8 }}>
+        {messages.length === 0 && !sending && (
+          <div className="muted small chat-empty">
+            무엇을 만들까요? 아래에 편하게 적어주세요. Opus가 필요한 걸 되물으며 함께 정리합니다.
+          </div>
+        )}
+        {messages.map((m, i) => (
+          <div key={i} className={`chat-msg chat-${m.role}`}>
+            <span className="chat-who">{m.role === "user" ? "나" : "Opus"}</span>
+            <div className="chat-bubble">
+              {m.role === "assistant" ? <Markdown>{m.content}</Markdown> : m.content}
+            </div>
+          </div>
+        ))}
+        {sending && (
+          <div className="chat-msg chat-assistant">
+            <span className="chat-who">Opus</span>
+            <div className="chat-bubble muted">…생각 중</div>
+          </div>
+        )}
+      </div>
+
+      {chatError && (
+        <div className="small" style={{ color: "var(--red)", marginTop: 6 }}>
+          {chatError}
+        </div>
+      )}
+
+      <div style={{ marginTop: 8 }}>
+        <textarea
+          placeholder="기획 / 요구사항을 적어주세요…  (Enter 전송 · Shift+Enter 줄바꿈)"
+          rows={3}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              send();
+            }
+          }}
+        />
+        <div className="row" style={{ marginTop: 8, gap: 8 }}>
+          <button type="button" className="ghost" onClick={send} disabled={!input.trim() || sending}>
+            {sending ? "전송 중…" : "💬 보내기"}
+          </button>
+        </div>
+      </div>
+
+      <div style={{ height: 12, borderBottom: "1px solid var(--border)", marginBottom: 12 }} />
+
       <RepoPicker value={targetDir} repos={repos} onChange={setTargetDir} />
       <div className="muted small" style={{ marginTop: 4 }}>
         {usingDefault
@@ -149,8 +237,19 @@ export function NewTaskForm({
         </>
       )}
       <div style={{ height: 8 }} />
-      <button type="submit">▶ Plan with Opus</button>
-    </form>
+      <button type="button" onClick={startRun} disabled={!canStart}>
+        ▶ 이 내용으로 계획 시작
+      </button>
+      {!canStart && (
+        <div className="muted small" style={{ marginTop: 6 }}>
+          {!title.trim()
+            ? "제목을 입력하세요."
+            : !hasChat
+              ? "요구사항을 한 번 이상 보내세요."
+              : ""}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -269,9 +368,11 @@ export function RunDetailCard({ detail }: { detail: RunDetail }) {
 
 // Phase progress bar for one run. Turns the single status badge into an
 // at-a-glance "어디쯤인지" stepper across the fixed pipeline stages.
-const PHASES: { key: string; label: string; agentId?: string }[] = [
+// The approval gate is NOT its own node — it lives ON the 기획(호재) node, which
+// blinks while awaiting approval to say "I'm waiting for you here". So the
+// stepper is just the four agent phases.
+const PHASES: { key: string; label: string; agentId: string }[] = [
   { key: "planning", label: "기획", agentId: "hojae" },
-  { key: "awaiting_approval", label: "승인" },
   { key: "building", label: "빌드", agentId: "taekyung" },
   { key: "verifying", label: "검증", agentId: "juho" },
   { key: "committed", label: "완료", agentId: "system" },
@@ -282,53 +383,61 @@ function kindPhaseIndex(kind: string): number {
     case "plan":
       return 0;
     case "build":
-      return 2;
+      return 1;
     case "verify":
     case "review":
     case "test":
-      return 3;
+      return 2;
     case "commit":
-      return 4;
+      return 3;
     default:
       return 0;
   }
 }
 
-// Best-effort mapping of a run to a phase index + whether it's done/failed.
-// Happy-path statuses map directly; terminal errors infer the furthest phase
-// reached from the steps (there is no step for the approval gate).
-function runProgress(detail: RunDetail): { reached: number; failed: boolean; done: boolean } {
+// Best-effort mapping of a run to a phase index + its state. Happy-path statuses
+// map directly; awaiting_approval sits on the 기획 node (blinking); terminal
+// errors infer the furthest phase reached from the steps.
+function runProgress(detail: RunDetail): {
+  reached: number;
+  failed: boolean;
+  done: boolean;
+  awaiting: boolean;
+} {
   const status = detail.status;
-  if (status === "committed") return { reached: 4, failed: false, done: true };
+  if (status === "committed") return { reached: 3, failed: false, done: true, awaiting: false };
+  if (status === "awaiting_approval")
+    return { reached: 0, failed: false, done: false, awaiting: true };
   const idx = PHASES.findIndex((p) => p.key === status);
-  if (idx >= 0) return { reached: idx, failed: false, done: false };
+  if (idx >= 0) return { reached: idx, failed: false, done: false, awaiting: false };
 
   // rejected / failed / cancelled → how far did it get?
   let reached = 0;
   for (const s of detail.steps) reached = Math.max(reached, kindPhaseIndex(s.kind));
-  if (detail.plan && reached < 1) reached = 1; // a plan was produced → reached approval
-  return { reached, failed: true, done: false };
+  return { reached, failed: true, done: false, awaiting: false };
 }
 
 export function RunProgress({ detail }: { detail: RunDetail }) {
-  const { reached, failed, done } = runProgress(detail);
+  const { reached, failed, done, awaiting } = runProgress(detail);
 
   return (
     <div className="panel">
       <b>진행도</b>
       <div className="stepper" style={{ marginTop: 10 }}>
         {PHASES.map((p, i) => {
-          let state: "done" | "current" | "pending" | "failed";
+          let state: "done" | "current" | "pending" | "failed" | "waiting";
           if (done) state = "done";
+          else if (awaiting) state = i === 0 ? "waiting" : "pending";
           else if (failed) state = i < reached ? "done" : i === reached ? "failed" : "pending";
           else state = i < reached ? "done" : i === reached ? "current" : "pending";
 
-          const agent = p.agentId ? agentById(p.agentId) : null;
+          const agent = agentById(p.agentId);
+          const animate = state === "current" ? "bob" : state === "waiting" ? "blink" : undefined;
           return (
             <div key={p.key} className={`step-node s-${state}`}>
               <div className="step-dot">
                 {agent ? (
-                  <span className={state === "current" ? "bob" : undefined}>
+                  <span className={animate}>
                     <PixelAvatar agent={agent} size={30} />
                   </span>
                 ) : state === "done" ? (
@@ -336,24 +445,33 @@ export function RunProgress({ detail }: { detail: RunDetail }) {
                 ) : state === "failed" ? (
                   "✕"
                 ) : (
-                  "🔑"
+                  "•"
                 )}
               </div>
-              <div className="step-label">{p.label}</div>
+              <div className="step-label">
+                {state === "waiting" ? "승인 대기" : p.label}
+              </div>
               {agent && <div className="step-who">{agent.name}</div>}
               {i < PHASES.length - 1 && <div className="step-bar" />}
             </div>
           );
         })}
       </div>
+      {awaiting && (
+        <div className="muted small" style={{ marginTop: 12, textAlign: "center" }}>
+          호재가 계획을 마치고{" "}
+          <b style={{ color: "var(--yellow)" }}>승인을 기다리고 있어요</b> — 위에서 승인하거나 거절하세요.
+        </div>
+      )}
     </div>
   );
 }
 
 type SummaryFilter = "all" | "done" | "error";
 
-export function AgentWorkSummary({ steps }: { steps: Step[] }) {
+export function AgentWorkSummary({ steps, status }: { steps: Step[]; status?: string }) {
   const [filter, setFilter] = useState<SummaryFilter>("all");
+  const awaitingApproval = status === "awaiting_approval";
   const visible = steps.filter((step) => step.kind !== "commit" || step.summary);
 
   const doneCount = visible.filter((s) => s.status === "passed").length;
@@ -393,7 +511,11 @@ export function AgentWorkSummary({ steps }: { steps: Step[] }) {
       ) : (
         <div className="agent-summary-list">
           {shown.map((step) => (
-            <SummaryItem key={step.id} step={step} />
+            <SummaryItem
+              key={step.id}
+              step={step}
+              awaitingApproval={awaitingApproval && step.kind === "plan"}
+            />
           ))}
         </div>
       )}
@@ -409,10 +531,15 @@ const INFRA_FAIL =
 
 type Outcome = { icon: string; label: string; tone: string };
 
-function stepOutcome(step: Step): Outcome {
+function stepOutcome(step: Step, awaitingApproval = false): Outcome {
   const isVerify = step.kind === "verify" || step.kind === "review" || step.kind === "test";
   if (step.status === "running") return { icon: "⏳", label: isVerify ? "검토 중" : "진행 중", tone: "running" };
   if (step.status === "skipped") return { icon: "⏭️", label: "건너뜀", tone: "pending" };
+  // Plan is done but not yet approved — signal it's a pending gate, not a
+  // finished task (amber tone), so it doesn't read as "approved / done".
+  if (awaitingApproval && step.kind === "plan" && step.status === "passed") {
+    return { icon: "⏳", label: "기획 완료 · 승인 대기", tone: "running" };
+  }
   if (isVerify) {
     if (step.status === "passed") return { icon: "✅", label: "통과 · 문제없음", tone: "passed" };
     if (step.status === "failed") {
@@ -433,9 +560,9 @@ function stepOutcome(step: Step): Outcome {
 
 // One work-summary card: who did it, the outcome verdict, and the summary body
 // (codex review reason / build "무엇을 했는지"), clamped with a 더보기 toggle.
-function SummaryItem({ step }: { step: Step }) {
+function SummaryItem({ step, awaitingApproval = false }: { step: Step; awaitingApproval?: boolean }) {
   const agent = agentForStep(step);
-  const outcome = stepOutcome(step);
+  const outcome = stepOutcome(step, awaitingApproval);
   const [expanded, setExpanded] = useState(false);
   const body =
     step.summary?.trim() || (step.status === "running" ? "진행 중입니다." : "요약이 없습니다.");

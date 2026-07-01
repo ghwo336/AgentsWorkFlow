@@ -59,6 +59,9 @@ export type Step = {
 
 export type RunDetail = Run & { events: RunEvent[]; verdicts: unknown[]; steps: Step[] };
 
+// One turn in the pre-plan requirements chat (client-held history).
+export type ChatMessage = { role: "user" | "assistant"; content: string };
+
 export type StartRunInput = {
   title: string;
   brief: string;
