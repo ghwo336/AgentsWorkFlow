@@ -1,12 +1,59 @@
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { promisify } from "node:util";
 import type { CodexVerdict } from "@agent-loop/shared/types";
 import type { CodexUsage, Reviewer, VerifyRequest, VerifyResult, Verifier } from "./types.js";
 
-const pexec = promisify(execFile);
+// Run codex with its STDIN CLOSED. codex reads stdin whenever it's an open pipe
+// ("Reading additional input from stdin...") and blocks forever waiting for
+// EOF — and Node's execFile leaves the child stdin open, which hangs every
+// verification until timeout. Spawning with stdin='ignore' gives an immediate
+// EOF (equivalent to `codex … < /dev/null`), so it uses the prompt argument.
+function runCodex(
+  args: string[],
+  opts: { cwd: string; timeoutMs: number; maxBuffer: number }
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("codex", args, { cwd: opts.cwd, stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    const settle = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn();
+    };
+    const timer = setTimeout(
+      () =>
+        settle(() => {
+          child.kill("SIGKILL");
+          reject(Object.assign(new Error("codex timed out"), { stdout, stderr }));
+        }),
+      opts.timeoutMs
+    );
+    child.stdout.on("data", (d) => {
+      stdout += d;
+      if (stdout.length > opts.maxBuffer)
+        settle(() => {
+          child.kill("SIGKILL");
+          reject(Object.assign(new Error("codex output exceeded maxBuffer"), { stdout, stderr }));
+        });
+    });
+    child.stderr.on("data", (d) => {
+      stderr += d;
+    });
+    child.on("error", (err) => settle(() => reject(err)));
+    child.on("close", (code) =>
+      settle(() =>
+        code === 0
+          ? resolve({ stdout, stderr })
+          : reject(Object.assign(new Error(`codex exited with code ${code}`), { stdout, stderr }))
+      )
+    );
+  });
+}
 
 const REVIEWER_PROMPT_HEADER = [
   "You are a strict code reviewer in an automated dev loop.",
@@ -60,8 +107,7 @@ async function runCodexVerify(
   const prompt = buildReviewPrompt(plan, diff);
 
   try {
-    const { stdout, stderr } = await pexec(
-      "codex",
+    const { stdout, stderr } = await runCodex(
       [
         "exec",
         "--json",
@@ -74,7 +120,7 @@ async function runCodexVerify(
         lastMsgPath,
         prompt,
       ],
-      { cwd, maxBuffer: 64 * 1024 * 1024, timeout: 15 * 60 * 1000 }
+      { cwd, maxBuffer: 64 * 1024 * 1024, timeoutMs: 15 * 60 * 1000 }
     );
 
     const usage = parseCodexUsage(stdout);
