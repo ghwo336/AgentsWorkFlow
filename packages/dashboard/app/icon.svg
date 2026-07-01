@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" shape-rendering="crispEdges">
+  <!-- dark rounded backdrop so the bot reads on any tab color (matches app bg) -->
+  <rect width="16" height="16" rx="3" fill="#12141c"/>
+  <!-- antenna -->
+  <rect x="6" y="0" width="4" height="1" fill="#ffe08a"/>
+  <rect x="7" y="1" width="2" height="2" fill="#8b93b8"/>
+  <!-- head body -->
+  <rect x="3" y="3" width="10" height="1" fill="#7fb0ff"/>
+  <rect x="2" y="4" width="12" height="10" fill="#5b9dff"/>
+  <rect x="2" y="13" width="12" height="1" fill="#2b4f8f"/>
+  <!-- side role lights -->
+  <rect x="1" y="6" width="1" height="3" fill="#57d99a"/>
+  <rect x="14" y="6" width="1" height="3" fill="#b98bff"/>
+  <!-- face screen -->
+  <rect x="3" y="5" width="10" height="6" fill="#12141c"/>
+  <!-- eyes + smile -->
+  <rect x="5" y="6" width="2" height="2" fill="#7fe0ff"/>
+  <rect x="9" y="6" width="2" height="2" fill="#7fe0ff"/>
+  <rect x="6" y="9" width="4" height="1" fill="#7fe0ff"/>
+  <!-- blush -->
+  <rect x="3" y="8" width="1" height="1" fill="#ff9db0"/>
+  <rect x="12" y="8" width="1" height="1" fill="#ff9db0"/>
+  <!-- feet -->
+  <rect x="4" y="14" width="3" height="2" fill="#2b4f8f"/>
+  <rect x="9" y="14" width="3" height="2" fill="#2b4f8f"/>
+</svg>

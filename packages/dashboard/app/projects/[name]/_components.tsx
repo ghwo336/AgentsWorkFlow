@@ -433,7 +433,7 @@ function FlowPill({ step }: { step: Step }) {
     <span className={`flow-pill flow-${tone}`} title={step.summary ?? step.label}>
       <span className="flow-ico">{FLOW_ICON[step.kind] ?? "•"}</span>
       <span className={step.status === "running" ? "blink" : undefined} style={{ display: "inline-flex" }}>
-        <PixelAvatar agent={agent} size={18} />
+        <PixelAvatar agent={agent} size={18} active={step.status === "running"} />
       </span>
       <span className="flow-verb">
         {flowVerb(step.kind)}
@@ -510,7 +510,7 @@ export function RunProgress({ detail }: { detail: RunDetail }) {
           >
             <span className="flow-ico">📋</span>
             <span className={awaiting ? "blink" : undefined} style={{ display: "inline-flex" }}>
-              <PixelAvatar agent={hojae} size={18} />
+              <PixelAvatar agent={hojae} size={18} active={awaiting} />
             </span>
             <span className="flow-verb">기획 · {hojae.name}</span>
           </span>
@@ -540,7 +540,7 @@ export function RunProgress({ detail }: { detail: RunDetail }) {
             <span className="flow-pill flow-running">
               <span className="flow-ico">🔨</span>
               <span className="blink" style={{ display: "inline-flex" }}>
-                <PixelAvatar agent={taekyung} size={18} />
+                <PixelAvatar agent={taekyung} size={18} active />
               </span>
               <span className="flow-verb">태경이 구현을 준비하는 중…</span>
             </span>
@@ -688,7 +688,7 @@ function SummaryItem({
     <div className={`agent-summary-item role-${agent.role}`}>
       <div className="row spread agent-summary-head">
         <div className="agent-summary-who">
-          <PixelAvatar agent={agent} size={34} />
+          <PixelAvatar agent={agent} size={34} active={step.status === "running"} />
           <div>
             <b style={{ color: ROLE_COLOR[agent.role] }}>{agent.name}</b>
             <span className="muted small">
@@ -874,4 +874,3 @@ export function LiveLog({ events }: { events: RunEvent[] }) {
     </div>
   );
 }
-

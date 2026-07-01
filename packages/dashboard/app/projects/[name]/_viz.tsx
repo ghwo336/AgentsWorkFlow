@@ -120,7 +120,7 @@ function StepListView({ steps, status }: { steps: Step[]; status?: string }) {
             <span style={{ minWidth: 20 }}>{kindIcon(s.kind)}</span>
             <span className="step-label">{s.label}</span>
             <span className="agent-chip">
-              <PixelAvatar agent={agentForStep(s)} size={18} />
+              <PixelAvatar agent={agentForStep(s)} size={18} active={s.status === "running"} />
               <span className="agent-chip-name" style={{ color: ROLE_COLOR[agentForStep(s).role] }}>
                 {agentForStep(s).name}
               </span>
@@ -168,7 +168,7 @@ function KanbanView({ steps }: { steps: Step[] }) {
                     {kindIcon(s.kind)} {s.label}
                   </div>
                   <div className="agent-chip" style={{ marginTop: 2 }}>
-                    <PixelAvatar agent={agentForStep(s)} size={16} />
+                    <PixelAvatar agent={agentForStep(s)} size={16} active={s.status === "running"} />
                     <span className="agent-chip-name" style={{ color: ROLE_COLOR[agentForStep(s).role] }}>
                       {agentForStep(s).name}
                     </span>
@@ -261,7 +261,7 @@ function GraphView({ steps }: { steps: Step[] }) {
                 className={s.status === "running" ? "node-running" : undefined}
               />
               <g transform="translate(8,6)">
-                <PixelAvatar agent={agentForStep(s)} size={22} />
+                <PixelAvatar agent={agentForStep(s)} size={22} active={s.status === "running"} />
               </g>
               <text x={36} y={20} fill="var(--text)" fontSize={12}>
                 {truncate(s.label, 13)}

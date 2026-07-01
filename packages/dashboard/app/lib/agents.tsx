@@ -15,6 +15,11 @@ export type Role = "plan" | "build" | "verify" | "system";
 
 export type Feature = "glasses" | "headset" | "spiky" | "mustache" | "none";
 
+// Each teammate's laptop — shown (typing + on fire) while they work. brand sets
+// the silhouette; lid/logo set the color (MacBook silver vs space gray). Everyone
+// is on a MacBook; only the finish differs.
+export type Laptop = { brand: "macbook" | "galaxybook"; lid: string; logo: string };
+
 export type Agent = {
   id: string;
   name: string; // 호재
@@ -27,10 +32,15 @@ export type Agent = {
   shirt: string;
   accent: string; // tie + feature color
   feature: Feature;
+  laptop: Laptop;
 };
 
 const SKIN = "#f2c9a0";
 const EYE = "#26283a";
+
+// Shared laptop palettes.
+const MACBOOK_SILVER: Laptop = { brand: "macbook", lid: "#c9ccd2", logo: "#eef0f4" };
+const MACBOOK_SPACEGRAY: Laptop = { brand: "macbook", lid: "#52555c", logo: "#868a93" };
 
 export const CAST: Agent[] = [
   {
@@ -44,6 +54,7 @@ export const CAST: Agent[] = [
     shirt: "#5b9dff",
     accent: "#2b4f8f",
     feature: "glasses",
+    laptop: MACBOOK_SILVER,
   },
   {
     id: "taekyung",
@@ -56,6 +67,7 @@ export const CAST: Agent[] = [
     shirt: "#57d99a",
     accent: "#2f8f63",
     feature: "headset",
+    laptop: MACBOOK_SILVER,
   },
   {
     id: "minjae",
@@ -68,6 +80,7 @@ export const CAST: Agent[] = [
     shirt: "#3fd0c9",
     accent: "#238f89",
     feature: "spiky",
+    laptop: MACBOOK_SPACEGRAY,
   },
   {
     id: "juho",
@@ -80,6 +93,7 @@ export const CAST: Agent[] = [
     shirt: "#b98bff",
     accent: "#7a4fd0",
     feature: "glasses",
+    laptop: MACBOOK_SILVER,
   },
   {
     id: "donghwan",
@@ -92,6 +106,7 @@ export const CAST: Agent[] = [
     shirt: "#ff9f6b",
     accent: "#c96a35",
     feature: "mustache",
+    laptop: MACBOOK_SPACEGRAY,
   },
 ];
 
@@ -106,6 +121,7 @@ export const SYSTEM_AGENT: Agent = {
   shirt: "#8b93b8",
   accent: "#5a6488",
   feature: "none",
+  laptop: MACBOOK_SPACEGRAY,
 };
 
 export const ROLE_LABEL: Record<Role, string> = {
@@ -198,7 +214,15 @@ export function agentForEvent(ev: {
 // reads as pixel art. Collar + tie give the corporate vibe; per-character
 // hair / shirt colors + one feature (glasses / headset / spiky / mustache)
 // keep everyone distinct.
-export function PixelAvatar({ agent, size = 40 }: { agent: Agent; size?: number }) {
+export function PixelAvatar({
+  agent,
+  size = 40,
+  active = false,
+}: {
+  agent: Agent;
+  size?: number;
+  active?: boolean;
+}) {
   const px = (n: number) => n; // 16-unit viewBox
   const R = (x: number, y: number, w: number, h: number, fill: string, opacity?: number) => (
     <rect key={`${x}-${y}-${w}-${h}-${fill}`} x={px(x)} y={px(y)} width={w} height={h} fill={fill} opacity={opacity} />
@@ -210,58 +234,114 @@ export function PixelAvatar({ agent, size = 40 }: { agent: Agent; size?: number 
       height={size}
       viewBox="0 0 16 16"
       shapeRendering="crispEdges"
+      className={`pixel-avatar pixel-avatar-${agent.role}${active ? " is-active" : ""}`}
       style={{ imageRendering: "pixelated", display: "block", flex: "0 0 auto" }}
       role="img"
       aria-label={`${agent.name} 픽셀 아바타`}
     >
-      {/* body / shoulders */}
-      {R(2, 12, 12, 4, agent.shirt)}
-      {R(2, 12, 12, 1, agent.shirt)}
-      {/* collar */}
-      {R(6, 12, 4, 1, "#ffffff")}
-      {/* neck */}
-      {R(7, 11, 2, 1, SKIN)}
-      {/* tie */}
-      {R(7, 12, 2, 1, agent.accent)}
-      {R(7, 13, 2, 3, agent.accent)}
-      {/* head */}
-      {R(4, 3, 8, 8, SKIN)}
-      {/* hair crown + sides */}
-      {R(3, 2, 10, 3, agent.hair)}
-      {R(3, 5, 1, 2, agent.hair)}
-      {R(12, 5, 1, 2, agent.hair)}
-      {agent.feature === "spiky" && (
-        <>
-          {R(4, 1, 1, 1, agent.hair)}
-          {R(7, 1, 2, 1, agent.hair)}
-          {R(11, 1, 1, 1, agent.hair)}
-        </>
+      {/* Fire shell BEHIND the body — flames wrap all the way around the
+          silhouette (열정을 태우는 느낌) while they're actively working. */}
+      {active && (
+        <g className="pixel-avatar-fire pixel-avatar-fire-shell">
+          {/* outer red flames hugging the outline, top → sides → base */}
+          {R(4, 0, 1, 3, "#ff5a2c")}
+          {R(7, 0, 2, 2, "#ff5a2c")}
+          {R(11, 0, 1, 3, "#ff5a2c")}
+          {R(0, 9, 1, 7, "#ff5a2c")}
+          {R(1, 6, 1, 10, "#ff5a2c")}
+          {R(15, 9, 1, 7, "#ff5a2c")}
+          {R(14, 6, 1, 10, "#ff5a2c")}
+          {R(2, 4, 1, 3, "#ff5a2c")}
+          {R(13, 4, 1, 3, "#ff5a2c")}
+          {R(1, 15, 14, 1, "#ff5a2c")}
+          {/* orange mid-flames, inset licks */}
+          {R(1, 4, 1, 3, "#ff9d2e")}
+          {R(14, 4, 1, 3, "#ff9d2e")}
+          {R(0, 12, 1, 4, "#ff9d2e")}
+          {R(15, 12, 1, 4, "#ff9d2e")}
+          {R(7, 1, 2, 1, "#ff9d2e")}
+          {/* hottest yellow tips */}
+          {R(7, 0, 1, 1, "#ffe15a")}
+          {R(1, 5, 1, 1, "#ffe15a")}
+          {R(14, 5, 1, 1, "#ffe15a")}
+        </g>
       )}
-      {/* eyes */}
-      {R(6, 7, 1, 2, EYE)}
-      {R(9, 7, 1, 2, EYE)}
-      {/* blush */}
-      {R(5, 9, 1, 1, "#ff9db0", 0.85)}
-      {R(10, 9, 1, 1, "#ff9db0", 0.85)}
-      {/* mouth */}
-      {agent.feature === "mustache" ? R(6, 9, 4, 1, agent.hair) : R(7, 10, 2, 1, "#c56a54")}
-      {/* glasses */}
-      {agent.feature === "glasses" && (
-        <>
-          <rect x={5} y={6} width={3} height={3} fill="none" stroke={agent.accent} strokeWidth={1} />
-          <rect x={8} y={6} width={3} height={3} fill="none" stroke={agent.accent} strokeWidth={1} />
-          {R(8, 7, 1, 1, agent.accent)}
-        </>
+      <g className="pixel-avatar-body">
+        {/* body / shoulders */}
+        {R(2, 12, 12, 4, agent.shirt)}
+        {R(2, 12, 12, 1, agent.shirt)}
+        {/* collar */}
+        {R(6, 12, 4, 1, "#ffffff")}
+        {/* neck */}
+        {R(7, 11, 2, 1, SKIN)}
+        {/* tie */}
+        {R(7, 12, 2, 1, agent.accent)}
+        {R(7, 13, 2, 3, agent.accent)}
+        {/* head */}
+        {R(4, 3, 8, 8, SKIN)}
+        {/* hair crown + sides */}
+        {R(3, 2, 10, 3, agent.hair)}
+        {R(3, 5, 1, 2, agent.hair)}
+        {R(12, 5, 1, 2, agent.hair)}
+        {agent.feature === "spiky" && (
+          <>
+            {R(4, 1, 1, 1, agent.hair)}
+            {R(7, 1, 2, 1, agent.hair)}
+            {R(11, 1, 1, 1, agent.hair)}
+          </>
+        )}
+        {/* eyes */}
+        <rect className="pixel-avatar-eye pixel-avatar-eye-left" x={6} y={7} width={1} height={2} fill={EYE} />
+        <rect className="pixel-avatar-eye pixel-avatar-eye-right" x={9} y={7} width={1} height={2} fill={EYE} />
+        {/* blush */}
+        {R(5, 9, 1, 1, "#ff9db0", 0.85)}
+        {R(10, 9, 1, 1, "#ff9db0", 0.85)}
+        {/* mouth */}
+        {agent.feature === "mustache" ? R(6, 9, 4, 1, agent.hair) : R(7, 10, 2, 1, "#c56a54")}
+        {/* glasses */}
+        {agent.feature === "glasses" && (
+          <>
+            <rect x={5} y={6} width={3} height={3} fill="none" stroke={agent.accent} strokeWidth={1} />
+            <rect x={8} y={6} width={3} height={3} fill="none" stroke={agent.accent} strokeWidth={1} />
+            {R(8, 7, 1, 1, agent.accent)}
+          </>
+        )}
+        {/* headset */}
+        {agent.feature === "headset" && (
+          <>
+            {R(3, 2, 10, 1, agent.accent)}
+            {R(3, 6, 1, 3, agent.accent)}
+            {R(12, 6, 1, 3, agent.accent)}
+            {R(3, 9, 2, 1, agent.accent)}
+            {R(5, 9, 1, 1, agent.accent)}
+          </>
+        )}
+      </g>
+
+      {/* Their laptop (open, in front of the torso), shown on the larger avatars
+          (roster/summary) as an identity prop and whenever they're actively
+          working. The character is engulfed in flames while working — 열일 중 🔥. */}
+      {(active || size >= 28) && (
+        <g className="pixel-avatar-laptop">
+          {R(3, 15, 10, 1, "#0e0f14")} {/* base shadow */}
+          {R(4, 12, 8, 3, agent.laptop.lid)} {/* screen lid (back) */}
+          {R(4, 12, 8, 1, "#000000", 0.22)} {/* top bezel shade */}
+          {agent.laptop.brand === "macbook"
+            ? R(7, 13, 2, 1, agent.laptop.logo) /* glowing apple logo */
+            : R(4, 14, 8, 1, agent.laptop.logo) /* galaxy hinge accent */}
+        </g>
       )}
-      {/* headset */}
-      {agent.feature === "headset" && (
-        <>
-          {R(3, 2, 10, 1, agent.accent)}
-          {R(3, 6, 1, 3, agent.accent)}
-          {R(12, 6, 1, 3, agent.accent)}
-          {R(3, 9, 2, 1, agent.accent)}
-          {R(5, 9, 1, 1, agent.accent)}
-        </>
+      {/* Flame tongues IN FRONT — licking up over the body's edges so the
+          character reads as engulfed, not just standing near a fire. */}
+      {active && (
+        <g className="pixel-avatar-fire pixel-avatar-fire-front">
+          {R(2, 12, 1, 4, "#ff9d2e", 0.8)}
+          {R(13, 12, 1, 4, "#ff9d2e", 0.8)}
+          {R(3, 10, 1, 3, "#ff5a2c", 0.6)}
+          {R(12, 10, 1, 3, "#ff5a2c", 0.6)}
+          {R(2, 8, 1, 2, "#ffe15a", 0.6)}
+          {R(13, 8, 1, 2, "#ffe15a", 0.6)}
+        </g>
       )}
     </svg>
   );
@@ -351,6 +431,43 @@ export function Workstation({ screen = "#5b9dff", w = 60 }: { screen?: string; w
   );
 }
 
+// A desk with the character's own OPEN LAPTOP (MacBook / Galaxy Book, in their
+// color) instead of a generic monitor — viewed from behind the lid so the brand
+// logo faces us. Used in the office roster.
+export function DeskLaptop({ laptop, w = 62 }: { laptop: Laptop; w?: number }) {
+  const mac = laptop.brand === "macbook";
+  return (
+    <svg width={w} height={(w * 12) / 24} viewBox="0 0 24 12" shapeRendering="crispEdges" style={{ display: "block" }}>
+      {/* open lid (back), standing on the desk */}
+      {pxRect(7, 0, 11, 6, laptop.lid)}
+      {pxRect(7, 0, 11, 1, "#000000", 0.28)} {/* top bezel */}
+      {pxRect(7, 0, 1, 6, "#ffffff", 0.1)} {/* left edge highlight */}
+      {pxRect(17, 0, 1, 6, "#000000", 0.18)} {/* right edge shade */}
+      {mac ? (
+        <>
+          {pxRect(11, 2, 3, 2, laptop.logo)} {/* apple logo */}
+          {pxRect(12, 2, 1, 1, "#ffffff", 0.7)} {/* glint */}
+        </>
+      ) : (
+        <>
+          {pxRect(9, 4, 7, 1, laptop.logo)} {/* galaxy brand bar */}
+          {pxRect(11, 2, 3, 1, laptop.logo)}
+        </>
+      )}
+      {/* hinge / keyboard base along the desk edge */}
+      {pxRect(6, 6, 13, 1, "#20232c")}
+      {/* coffee mug */}
+      {pxRect(2, 3, 3, 3, "#d98b5b")}
+      {pxRect(5, 4, 1, 1, "#d98b5b")}
+      {pxRect(2, 2, 3, 1, "#eaf4ff", 0.6)}
+      {/* desk top + front */}
+      {pxRect(0, 7, 24, 2, "#7d6a52")}
+      {pxRect(0, 7, 24, 1, "#8f7a5f")}
+      {pxRect(0, 9, 24, 3, "#574837")}
+    </svg>
+  );
+}
+
 // The brand mascot — a friendly little agent-bot. Antenna light + a screen face
 // with a cyan smile, blush, and green/purple side lights nodding to the roles.
 export function LogoMark({ size = 26 }: { size?: number }) {
@@ -435,7 +552,7 @@ export function TeamRoster() {
                 <div key={a.id} className="desk-seat" title={a.blurb}>
                   <PixelAvatar agent={a} size={40} />
                   <div className="desk-station">
-                    <Workstation screen={a.shirt} w={62} />
+                    <DeskLaptop laptop={a.laptop} w={62} />
                   </div>
                   <div className="roster-name pixel">{a.name}</div>
                   <div className="roster-engine muted small">{a.engineLabel}</div>

@@ -198,6 +198,66 @@ td, th { text-align: left; padding: 8px; border-bottom: 1px solid var(--border);
 .agent-chip { display: inline-flex; align-items: center; gap: 6px; }
 .agent-chip-name { font-family: var(--pixel); font-size: 12px; }
 
+/* Pixel characters have a quiet idle loop everywhere, then a sharper
+   step-based bounce when their current step is running. */
+.pixel-avatar {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+.pixel-avatar-body {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: avatar-idle 3.4s steps(2, end) infinite;
+}
+.pixel-avatar-eye {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: avatar-blink 4.8s steps(1, end) infinite;
+}
+.pixel-avatar-eye-right { animation-delay: .04s; }
+.pixel-avatar.is-active .pixel-avatar-body {
+  animation: avatar-work 780ms steps(2, end) infinite;
+}
+.pixel-avatar.is-active .pixel-avatar-eye {
+  animation: avatar-focus 780ms steps(2, end) infinite;
+}
+.pixel-avatar-build.is-active { filter: drop-shadow(0 0 5px rgba(87, 217, 154, .28)); }
+.pixel-avatar-plan.is-active { filter: drop-shadow(0 0 5px rgba(91, 157, 255, .28)); }
+.pixel-avatar-verify.is-active { filter: drop-shadow(0 0 5px rgba(185, 139, 255, .28)); }
+
+/* Flames engulfing the body while working — flicker in place. The shell (behind)
+   and the front tongues run the same loop out of phase so the fire looks alive. */
+.pixel-avatar-fire {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: avatar-fire 420ms steps(3, end) infinite;
+}
+.pixel-avatar-fire-front { animation-delay: 140ms; }
+@keyframes avatar-fire {
+  0% { opacity: .6; transform: scaleY(.8); }
+  50% { opacity: 1; transform: scaleY(1.15); }
+  100% { opacity: .75; transform: scaleY(.95); }
+}
+
+@keyframes avatar-idle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-1px); }
+}
+@keyframes avatar-work {
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translate(1px, -1px); }
+  50% { transform: translate(0, -2px); }
+  75% { transform: translate(-1px, -1px); }
+}
+@keyframes avatar-blink {
+  0%, 88%, 100% { transform: scaleY(1); }
+  90%, 92% { transform: scaleY(.25); }
+}
+@keyframes avatar-focus {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .55; }
+}
+
 /* Office scene: back wall (window/clock/plant) over a wood floor with desks. */
 .office { position: relative; overflow: hidden; }
 .office-wall {
@@ -325,6 +385,19 @@ td, th { text-align: left; padding: 8px; border-bottom: 1px solid var(--border);
 
 @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
 .blink { animation: blink 1s ease-in-out infinite; display: inline-flex; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pixel-avatar-body,
+  .pixel-avatar-eye,
+  .pixel-avatar.is-active .pixel-avatar-body,
+  .pixel-avatar.is-active .pixel-avatar-eye,
+  .pixel-avatar-fire,
+  .bob,
+  .blink,
+  .node-running {
+    animation: none;
+  }
+}
 
 /* ── Responsive (mobile) ───────────────────────────────────────── */
 @media (max-width: 720px) {
