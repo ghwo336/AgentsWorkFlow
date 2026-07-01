@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { realpath } from "node:fs/promises";
 import { promisify } from "node:util";
 
 const pexec = promisify(execFile);
@@ -11,17 +12,26 @@ async function runGit(cwd: string, args: string[]): Promise<string> {
   return stdout;
 }
 
-export async function isRepo(cwd: string): Promise<boolean> {
+// True only when `cwd` is the ROOT of its own git repo — not merely somewhere
+// inside a parent repo's work tree. This distinction is critical: workspaces
+// live under ./workspaces which is itself inside the agent-loop repo, so a naive
+// "is inside a work tree?" check would report true and skip isolation, letting
+// `git add -A` / `commit` operate on the whole parent repo.
+export async function isRepoRoot(cwd: string): Promise<boolean> {
   try {
-    await runGit(cwd, ["rev-parse", "--is-inside-work-tree"]);
-    return true;
+    const top = (await runGit(cwd, ["rev-parse", "--show-toplevel"])).trim();
+    return (await realpath(top)) === (await realpath(cwd));
   } catch {
     return false;
   }
 }
 
 export async function ensureRepo(cwd: string): Promise<void> {
-  if (await isRepo(cwd)) return;
+  // Already its own repo root (e.g. a user-supplied target repo) → leave as-is.
+  if (await isRepoRoot(cwd)) return;
+  // Otherwise give this run an ISOLATED repo, even when the directory sits
+  // inside a parent repo's work tree. `git init` here makes commits/diffs scope
+  // to this workspace only.
   await runGit(cwd, ["init"]);
   // Make sure there's an identity so commits don't fail in fresh envs.
   await runGit(cwd, ["config", "user.name", "agent-loop"]).catch(() => {});

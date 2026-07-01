@@ -1,6 +1,12 @@
 import { prisma } from "@agent-loop/shared/db";
 import { costUsd } from "@agent-loop/shared/pricing";
-import type { Phase, RunStatus, UsageRecord } from "@agent-loop/shared/types";
+import type {
+  Phase,
+  RunStatus,
+  StepKind,
+  StepStatus,
+  UsageRecord,
+} from "@agent-loop/shared/types";
 import { bus } from "./bus.js";
 
 // Append a timeline event: persist to DB + broadcast over SSE.
@@ -8,12 +14,12 @@ export async function logEvent(
   runId: string,
   phase: Phase,
   message: string,
-  opts: { level?: "info" | "warn" | "error"; model?: string | null } = {}
+  opts: { level?: "info" | "warn" | "error"; model?: string | null; stepId?: string } = {}
 ) {
   const level = opts.level ?? "info";
   const model = opts.model ?? null;
   const row = await prisma.event.create({
-    data: { runId, phase, message, level, model },
+    data: { runId, phase, message, level, model, stepId: opts.stepId ?? null },
   });
   bus.publish({
     type: "event",
@@ -22,10 +28,90 @@ export async function logEvent(
     level,
     model,
     message,
+    stepId: opts.stepId,
     ts: row.ts.toISOString(),
   });
   // mirror to stdout for terminal visibility
   console.log(`[${runId.slice(0, 6)}][${phase}] ${message}`);
+}
+
+// ── Steps (agent work spans) ───────────────────────────────────────────────
+// A step is created when an agent starts its unit of work and updated when it
+// finishes. Both persist + broadcast a `step` SSE event so the dashboard can
+// live-render the kanban / node graph / timeline off the same data.
+export interface CreateStepInput {
+  parentId?: string | null;
+  kind: StepKind;
+  label: string;
+  engine?: string | null;
+  model?: string | null;
+  attempt?: number;
+  orderIdx?: number;
+}
+
+export async function createStep(runId: string, input: CreateStepInput): Promise<string> {
+  const row = await prisma.step.create({
+    data: {
+      runId,
+      parentId: input.parentId ?? null,
+      kind: input.kind,
+      label: input.label,
+      engine: input.engine ?? null,
+      model: input.model ?? null,
+      attempt: input.attempt ?? 1,
+      orderIdx: input.orderIdx ?? 0,
+      status: "running",
+    },
+  });
+  bus.publish({
+    type: "step",
+    runId,
+    stepId: row.id,
+    parentId: row.parentId,
+    kind: row.kind as StepKind,
+    label: row.label,
+    engine: row.engine,
+    model: row.model,
+    attempt: row.attempt,
+    stepStatus: row.status as StepStatus,
+    summary: row.summary,
+    orderIdx: row.orderIdx,
+    startedAt: row.startedAt.toISOString(),
+    endedAt: null,
+    ts: row.startedAt.toISOString(),
+  });
+  return row.id;
+}
+
+export async function updateStep(
+  stepId: string,
+  patch: { status?: StepStatus; summary?: string | null; end?: boolean }
+): Promise<void> {
+  const row = await prisma.step.update({
+    where: { id: stepId },
+    data: {
+      ...(patch.status ? { status: patch.status } : {}),
+      ...(patch.summary !== undefined ? { summary: patch.summary } : {}),
+      ...(patch.end ? { endedAt: new Date() } : {}),
+    },
+  });
+  bus.publish({
+    type: "step",
+    runId: row.runId,
+    stepId: row.id,
+    parentId: row.parentId,
+    kind: row.kind as StepKind,
+    label: row.label,
+    engine: row.engine,
+    model: row.model,
+    attempt: row.attempt,
+    stepStatus: row.status as StepStatus,
+    summary: row.summary,
+    orderIdx: row.orderIdx,
+    startedAt: row.startedAt.toISOString(),
+    endedAt: row.endedAt ? row.endedAt.toISOString() : null,
+    ts: new Date().toISOString(),
+  });
 }
 
 // Transition a run's status: persist + broadcast.
@@ -44,7 +130,7 @@ export async function setStatus(
 }
 
 // Record one model invocation's token usage + API-equivalent cost in USD.
-export async function recordUsage(runId: string, u: UsageRecord) {
+export async function recordUsage(runId: string, u: UsageRecord, stepId?: string) {
   const cost = costUsd(u.model, u);
   await prisma.usage.create({
     data: {
@@ -57,6 +143,7 @@ export async function recordUsage(runId: string, u: UsageRecord) {
       cacheRead: u.cacheRead,
       cacheWrite: u.cacheWrite,
       costUsd: cost,
+      stepId: stepId ?? null,
     },
   });
   const total = u.inputTokens + u.outputTokens + u.cacheRead + u.cacheWrite;
@@ -64,7 +151,7 @@ export async function recordUsage(runId: string, u: UsageRecord) {
     runId,
     u.phase,
     `📊 ${u.model}: ${total.toLocaleString()} 토큰 사용 (≈ $${cost.toFixed(4)})`,
-    { model: u.engine }
+    { model: u.engine, stepId }
   );
 }
 
@@ -75,10 +162,11 @@ export async function recordVerdict(
   passed: boolean,
   reason: string,
   diff?: string,
-  raw?: string
+  raw?: string,
+  stepId?: string
 ) {
   await prisma.verdict.create({
-    data: { runId, attempt, passed, reason, diff, raw },
+    data: { runId, attempt, passed, reason, diff, raw, stepId: stepId ?? null },
   });
   bus.publish({
     type: "verdict",

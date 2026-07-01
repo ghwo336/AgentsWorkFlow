@@ -10,6 +10,12 @@ export type ProjectSummary = {
   costUsd: number;
 };
 
+export type Project = {
+  name: string;
+  defaultTargetDir: string | null;
+  createdAt: string;
+};
+
 export type Run = {
   id: string;
   project: string;
@@ -32,10 +38,30 @@ export type RunEvent = {
   ts: string;
 };
 
-export type RunDetail = Run & { events: RunEvent[]; verdicts: unknown[] };
+// One agent's work span within a run. Same data drives every visualization:
+// the list badges, the kanban columns (status), the node graph (parentId edge),
+// and the timeline/gantt bars (startedAt→endedAt).
+export type Step = {
+  id: string;
+  runId: string;
+  parentId: string | null;
+  kind: string; // plan | build | verify | review | test | commit
+  label: string;
+  engine: string | null;
+  model: string | null;
+  attempt: number;
+  status: string; // pending | running | passed | failed | skipped
+  summary: string | null;
+  startedAt: string;
+  endedAt: string | null;
+  orderIdx: number;
+};
+
+export type RunDetail = Run & { events: RunEvent[]; verdicts: unknown[]; steps: Step[] };
 
 export type StartRunInput = {
   title: string;
   brief: string;
   targetDir?: string;
+  workspaceName?: string; // name a fresh workspace folder (used when targetDir is empty)
 };

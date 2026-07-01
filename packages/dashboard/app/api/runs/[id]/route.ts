@@ -13,6 +13,7 @@ export async function GET(
     include: {
       events: { orderBy: { ts: "asc" } },
       verdicts: { orderBy: { ts: "asc" } },
+      steps: { orderBy: [{ orderIdx: "asc" }, { startedAt: "asc" }] },
     },
   });
   if (!run) return new Response("Not found", { status: 404 });

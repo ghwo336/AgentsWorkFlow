@@ -17,6 +17,7 @@ const StartSchema = z.object({
   brief: z.string().min(1),
   project: z.string().optional(),
   targetDir: z.string().optional(),
+  workspaceName: z.string().optional(),
 });
 app.post("/runs", async (req, reply) => {
   const parsed = StartSchema.safeParse(req.body);
@@ -27,14 +28,15 @@ app.post("/runs", async (req, reply) => {
   return reply.code(201).send({ id });
 });
 
-// Approve / reject a pending plan.
-const ApproveSchema = z.object({
-  approved: z.boolean(),
-  editedPlan: z.string().optional(),
-});
+// Decide on a pending plan: approve, reject, or revise (send feedback to re-plan).
+const DecisionSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("approve"), editedPlan: z.string().optional() }),
+  z.object({ action: z.literal("reject") }),
+  z.object({ action: z.literal("revise"), feedback: z.string().min(1) }),
+]);
 app.post("/runs/:id/approve", async (req, reply) => {
   const { id } = req.params as { id: string };
-  const parsed = ApproveSchema.safeParse(req.body);
+  const parsed = DecisionSchema.safeParse(req.body);
   if (!parsed.success) {
     return reply.code(400).send({ error: parsed.error.flatten() });
   }

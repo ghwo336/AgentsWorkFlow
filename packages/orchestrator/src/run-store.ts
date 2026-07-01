@@ -31,6 +31,12 @@ export class RunStore {
     return prisma.run.update({ where: { id: runId }, data: { targetDir } });
   }
 
+  // The project's remembered repo dir, used when a run omits targetDir.
+  async getProjectDefaultDir(name: string): Promise<string | null> {
+    const p = await prisma.project.findUnique({ where: { name } });
+    return p?.defaultTargetDir?.trim() || null;
+  }
+
   savePlan(runId: string, plan: string): Promise<unknown> {
     return prisma.run.update({ where: { id: runId }, data: { plan } });
   }

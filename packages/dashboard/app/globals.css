@@ -57,10 +57,11 @@ button.ghost { background: transparent; border: 1px solid var(--border); color: 
 button.danger { background: var(--red); }
 button:disabled { opacity: .5; cursor: not-allowed; }
 
-textarea, input {
+textarea, input, select {
   width: 100%; background: #0d1117; color: var(--text);
   border: 1px solid var(--border); border-radius: 6px; padding: 8px; font: inherit;
 }
+select { cursor: pointer; }
 
 .log {
   font-size: 12.5px; max-height: 420px; overflow-y: auto;
@@ -83,6 +84,86 @@ td, th { text-align: left; padding: 8px; border-bottom: 1px solid var(--border);
 
 /* Horizontal scroll container for wide tables on narrow screens. */
 .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+/* ── Step visualizations (list / kanban / graph / timeline) ─────── */
+.viz-tabs { display: flex; gap: 4px; }
+.viz-tab {
+  background: transparent; border: 1px solid var(--border); color: var(--muted);
+  padding: 4px 10px; border-radius: 6px; font-size: 12px;
+}
+.viz-tab.active { color: var(--text); border-color: var(--accent); background: rgba(47,129,247,.12); }
+
+/* progress bar */
+.progress { height: 6px; background: #0d1117; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
+.progress-fill { height: 100%; background: var(--green); transition: width .3s ease; }
+
+/* list rows */
+.step-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; }
+.step-dot { width: 8px; height: 8px; border-radius: 999px; flex: 0 0 auto; }
+.step-label { font-weight: 500; }
+.step-spacer { flex: 1 1 auto; }
+.step-summary { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* agent work summary */
+.agent-summary-list { display: flex; flex-direction: column; gap: 10px; }
+.agent-summary-item {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px;
+  background: #0d1117;
+}
+.agent-summary-head { align-items: flex-start; gap: 10px; }
+.agent-summary-body {
+  margin-top: 6px;
+  color: var(--text);
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.step-passed { color: var(--green); border-color: var(--green); }
+.step-failed { color: var(--red); border-color: var(--red); }
+.step-running { color: var(--yellow); border-color: var(--yellow); }
+.step-pending, .step-skipped { color: var(--muted); border-color: var(--border); }
+
+/* kanban */
+.kanban { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(180px, 1fr); gap: 10px; }
+.kan-col { background: #0d1117; border: 1px solid var(--border); border-radius: 8px; padding: 10px; min-width: 180px; }
+.kan-head { font-weight: 600; font-size: 12.5px; margin-bottom: 8px; }
+.kan-card { background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--border); border-radius: 6px; padding: 8px; margin-bottom: 8px; font-size: 12.5px; }
+.kan-summary { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* gantt */
+.gantt-row { display: flex; align-items: center; gap: 10px; }
+.gantt-label { flex: 0 0 150px; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gantt-track { position: relative; flex: 1 1 auto; height: 18px; background: #0d1117; border: 1px solid var(--border); border-radius: 4px; }
+.gantt-bar { position: absolute; top: 2px; bottom: 2px; border-radius: 3px; min-width: 3px; }
+.gantt-dur { flex: 0 0 56px; text-align: right; }
+
+/* running pulse (svg rect + gantt bar) */
+.node-running { animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .5; } }
+
+/* run phase stepper (진행도) */
+.stepper { display: flex; align-items: flex-start; }
+.step-node { position: relative; flex: 1 1 0; display: flex; flex-direction: column; align-items: center; text-align: center; }
+.step-dot {
+  width: 26px; height: 26px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 600; z-index: 1;
+  border: 2px solid var(--border); background: var(--panel); color: var(--muted);
+}
+.step-label { margin-top: 6px; font-size: 12px; color: var(--muted); }
+.step-bar { position: absolute; top: 12px; left: 50%; width: 100%; height: 2px; background: var(--border); z-index: 0; }
+
+.s-done .step-dot { border-color: var(--green); background: var(--green); color: var(--bg); }
+.s-done .step-bar { background: var(--green); }
+.s-done .step-label { color: var(--text); }
+
+.s-current .step-dot { border-color: var(--accent); color: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+.s-current .step-label { color: var(--text); font-weight: 600; }
+
+.s-failed .step-dot { border-color: var(--red); background: var(--red); color: var(--bg); }
+.s-failed .step-label { color: var(--red); }
 
 /* ── Responsive (mobile) ───────────────────────────────────────── */
 @media (max-width: 720px) {
@@ -110,4 +191,9 @@ td, th { text-align: left; padding: 8px; border-bottom: 1px solid var(--border);
   /* Timeline lines wrap instead of forcing the page wider than the screen. */
   .log .line { flex-wrap: wrap; }
   .log .line .ph { min-width: 52px; }
+
+  /* Gantt: narrower labels so bars keep usable width on phones. */
+  .gantt-label { flex-basis: 92px; }
+  .gantt-dur { flex-basis: 44px; }
+  .step-summary { max-width: 140px; }
 }

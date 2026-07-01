@@ -1,5 +1,5 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import type { RunReporter } from "../reporter.js";
+import type { PhaseReporter } from "../reporter.js";
 import type {
   AgentResult,
   BuildRequest,
@@ -13,7 +13,7 @@ type ClaudePhase = "plan" | "build";
 // Stream a Claude Agent SDK query, forwarding text + tool activity to the run
 // timeline (via the reporter), and return the final assistant text.
 async function runClaude(
-  reporter: RunReporter,
+  reporter: PhaseReporter,
   phase: ClaudePhase,
   model: string,
   prompt: string,
@@ -77,7 +77,7 @@ async function runClaude(
 // attributed correctly; fall back to the aggregate `usage` keyed to the
 // requested model.
 async function recordClaudeUsage(
-  reporter: RunReporter,
+  reporter: PhaseReporter,
   phase: ClaudePhase,
   model: string,
   msg: any
@@ -137,10 +137,23 @@ it without further questions.
 
 IMPORTANT: Write the plan prose in Korean (한국어). Keep code, identifiers,
 file paths, and commands in their original form — only the explanations,
-section headings, and descriptions should be Korean.`;
+section headings, and descriptions should be Korean.
+
+At the VERY END of your message, append a machine-readable step list: a fenced
+\`\`\`steps block containing a JSON array of strings. Each string is ONE
+self-contained implementation step that a builder agent can execute and a
+reviewer can verify on its own. Split the work into meaningful units (NOT one
+file per step) — aim for 3–8 ordered steps, each building on the previous.
+Write each step description in Korean (code/paths/identifiers stay as-is).
+Example:
+
+\`\`\`steps
+["Prisma 스키마에 X 모델 추가 후 마이그레이션", "API 라우트 /api/x 구현", "대시보드 UI 연결"]
+\`\`\``;
 
 const BUILD_SYSTEM = `You are the BUILD agent in an automated dev loop.
-Implement the APPROVED PLAN exactly. Make all necessary file edits in the
+Implement the requested work exactly. When a specific STEP is given, implement
+ONLY that step — do not start other steps. Make all necessary file edits in the
 working directory. Keep changes focused. Do not commit — a separate verifier
 and the orchestrator handle verification and committing.
 
@@ -155,8 +168,17 @@ When done, write a concise Korean summary covering:
 export class ClaudePlanner implements Planner {
   constructor(private readonly model: string) {}
 
-  plan(req: PlanRequest, reporter: RunReporter): Promise<AgentResult> {
-    return runClaude(reporter, "plan", this.model, req.brief, {
+  plan(req: PlanRequest, reporter: PhaseReporter): Promise<AgentResult> {
+    const prompt =
+      req.previousPlan && req.feedback
+        ? [
+            `# Original request\n${req.brief}`,
+            `# 직전에 당신이 제안한 계획\n${req.previousPlan}`,
+            `# 사용자 피드백 — 아래 요청을 반영해 계획을 수정하세요\n${req.feedback}`,
+            `수정된 전체 계획을 처음부터 다시 제시하세요 (끝에 \`\`\`steps 블록 포함).`,
+          ].join("\n\n")
+        : req.brief;
+    return runClaude(reporter, "plan", this.model, prompt, {
       cwd: req.cwd,
       permissionMode: "plan",
       systemPrompt: PLAN_SYSTEM,
@@ -168,14 +190,30 @@ export class ClaudePlanner implements Planner {
 export class ClaudeBuilder implements Builder {
   constructor(private readonly model: string) {}
 
-  build(req: BuildRequest, reporter: RunReporter): Promise<AgentResult> {
+  build(req: BuildRequest, reporter: PhaseReporter): Promise<AgentResult> {
+    const s = req.step;
+    const completedBlock =
+      s && s.completed.length
+        ? `# 이미 완료된 단계 (커밋됨 — 다시 구현하지 말 것)\n${s.completed
+            .map((d, i) => `${i + 1}. ${d}`)
+            .join("\n")}`
+        : "";
+    const currentBlock = s
+      ? `# 지금 구현할 단계 (${s.index}/${s.total}) — 오직 이 단계만 구현\n${s.description}`
+      : "";
+    const closing = s
+      ? `이번 단계(${s.index}/${s.total})만 구현하세요. 다른 단계는 건드리지 마세요.`
+      : `Implement this now in the working directory.`;
+
     const prompt = [
       `# Original request\n${req.brief}`,
-      `# Approved plan\n${req.approvedPlan}`,
+      `# Approved plan (전체 맥락)\n${req.approvedPlan}`,
+      completedBlock,
+      currentBlock,
       req.feedback
         ? `# Verifier feedback from the previous attempt (MUST be fixed)\n${req.feedback}`
         : "",
-      `Implement this now in the working directory.`,
+      closing,
     ]
       .filter(Boolean)
       .join("\n\n");

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import type { CodexVerdict } from "@agent-loop/shared/types";
-import type { CodexUsage, VerifyRequest, VerifyResult, Verifier } from "./types.js";
+import type { CodexUsage, Reviewer, VerifyRequest, VerifyResult, Verifier } from "./types.js";
 
 const pexec = promisify(execFile);
 
@@ -158,12 +158,20 @@ function extractVerdict(raw: string): CodexVerdict {
   throw new Error(`Could not parse codex verdict from: ${trimmed.slice(0, 500)}`);
 }
 
-// codex-backed verifier. The verdict schema path is injected so this module
-// stays free of orchestrator config wiring (DIP).
-export class CodexVerifier implements Verifier {
-  constructor(private readonly schemaPath: string) {}
+// codex-backed reviewer. The verdict schema path is injected so this module
+// stays free of orchestrator config wiring (DIP). It satisfies both Verifier
+// (legacy single-verify) and Reviewer (fan-out), so it can be dropped into the
+// reviewers array with any others.
+export class CodexVerifier implements Verifier, Reviewer {
+  readonly name = "codex";
+  readonly kind = "review" as const;
+  readonly engine = "codex";
+  constructor(private readonly schemaPath: string, readonly model: string = "gpt-5.5") {}
 
   verify(req: VerifyRequest): Promise<VerifyResult> {
     return runCodexVerify(req.cwd, req.plan, req.diff, this.schemaPath);
+  }
+  review(req: VerifyRequest): Promise<VerifyResult> {
+    return this.verify(req);
   }
 }

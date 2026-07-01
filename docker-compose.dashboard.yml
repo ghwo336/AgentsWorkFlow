@@ -15,7 +15,13 @@ services:
       DASHBOARD_AUTH_REQUIRED: ${DASHBOARD_AUTH_REQUIRED:-true}
       DASHBOARD_USERNAME: ${DASHBOARD_USERNAME:?set DASHBOARD_USERNAME}
       DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD:?set DASHBOARD_PASSWORD}
+      # Repo picker scans this path; it must resolve to the same host paths the
+      # host-side orchestrator uses, so the srv tree is mounted 1:1 below.
+      REPO_SCAN_ROOTS: ${REPO_SCAN_ROOTS:-/Users/Shared/srv}
     volumes:
       - ./prisma:/app/prisma
+      # Read-only so the dashboard can list git repos; the orchestrator (on the
+      # host) is what actually writes to them.
+      - /Users/Shared/srv:/Users/Shared/srv:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"

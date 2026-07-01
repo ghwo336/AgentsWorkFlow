@@ -32,4 +32,10 @@ export const config = {
   codexModel: resolveCodexModel(),
   maxVerifyRetries: Number(process.env.MAX_VERIFY_RETRIES ?? 3),
   verdictSchemaPath: resolve(__dirname, "../verdict.schema.json"),
+  // Fan-out review policy: "all" = every reviewer must PASS to commit (default),
+  // "any" = one PASS is enough. See runner.ts for the injected reviewer set.
+  reviewPolicy: (process.env.REVIEW_POLICY === "any" ? "any" : "all") as "all" | "any",
+  // Optional test-runner reviewer: a shell command run in the working copy;
+  // exit 0 = PASS. Adds a parallel "test" node to the verify fan-out.
+  testCmd: process.env.TEST_CMD?.trim() || undefined,
 };

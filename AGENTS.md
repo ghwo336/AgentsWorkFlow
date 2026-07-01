@@ -52,16 +52,17 @@ agent-loop/
 | 파일 | 책임 |
 |---|---|
 | `index.ts` | Fastify 서버. HTTP 라우트(`POST /runs`, `POST /runs/:id/approve`, `GET /events` SSE)와 검증(zod)만 담당 |
-| `runner.ts` | **컴포지션 루트**. 구체 구현(ClaudePlanner/Builder, CodexVerifier, Git 등)을 한 곳에서 조립하고 `startRun`/`resolveApproval`만 export. **엔진 교체 = 여기 한 줄 수정** |
-| `pipeline.ts` | `RunPipeline` — plan→approve→build/verify/commit **상태머신**. 오케스트레이션 정책만 담고, 모든 부수효과는 주입된 추상화로 호출. 단계별 메서드(`plan`/`approve`/`buildVerifyCommit`)로 분리 |
-| `agents/types.ts` | `Planner` · `Builder` · `Verifier` 인터페이스(ISP). 요청/결과 타입 |
-| `agents/claude-agent.ts` | `ClaudePlanner`, `ClaudeBuilder` — Claude Agent SDK 스트리밍 어댑터 |
-| `agents/codex-agent.ts` | `CodexVerifier` — `codex exec` 호출 + 토큰/판정 파싱. 스키마 경로는 주입받음 |
+| `runner.ts` | **컴포지션 루트**. 구체 구현(ClaudePlanner/Builder, `reviewers[]`(CodexVerifier + 선택적 CommandReviewer), Git 등)을 한 곳에서 조립하고 `startRun`/`resolveApproval`만 export. **엔진/리뷰어 교체 = 여기 한 줄 수정** |
+| `pipeline.ts` | `RunPipeline` — plan→approve→build/**review 팬아웃**/commit **상태머신**. 정책만 담고 부수효과는 주입된 추상화로 호출. 단계별 메서드(`plan`/`approve`/`buildVerifyCommit`/`review`)로 분리. 각 국면을 **Step(작업 span)** 으로 방출 |
+| `agents/types.ts` | `Planner` · `Builder` · `Verifier` · `Reviewer` 인터페이스(ISP). 요청/결과 타입 |
+| `agents/claude-agent.ts` | `ClaudePlanner`, `ClaudeBuilder` — Claude Agent SDK 스트리밍 어댑터. `PhaseReporter`(log+usage)만 의존 |
+| `agents/codex-agent.ts` | `CodexVerifier` — `codex exec` 호출 + 토큰/판정 파싱. `Reviewer`(name/kind/engine/model + review) 구현 |
+| `agents/command-reviewer.ts` | `CommandReviewer` — 셸 명령(TEST_CMD) 실행, exit 0 = PASS. 테스트 러너를 리뷰 팬아웃에 합류시키는 `Reviewer` |
 | `approval-gate.ts` | `ApprovalGate` — 사람 승인을 기다리는 async 게이트(runId→resolver) |
-| `reporter.ts` | `RunReporter`(추상) + `DbRunReporter` — runId에 바인딩된 로그/상태/사용량/판정 기록 파사드. events 모듈에 위임 |
+| `reporter.ts` | `PhaseReporter`(log/usage) ⊂ `RunReporter`/`StepHandle`. `DbRunReporter` — runId 바인딩 파사드. `startStep()`→step에 바인딩된 `StepHandle`(log/usage/verdict/finish) |
 | `run-store.ts` | `RunStore` — run/project 영속화(Prisma) 경계 |
 | `git.ts` | git 함수들 + `GitOps` 인터페이스 + `git` 구현 객체 |
-| `events.ts` | 저수준 영속화+SSE 브로드캐스트(`logEvent`/`setStatus`/`recordUsage`/`recordVerdict`) |
+| `events.ts` | 저수준 영속화+SSE 브로드캐스트(`logEvent`/`setStatus`/`recordUsage`/`recordVerdict`/`createStep`/`updateStep`) |
 | `bus.ts` | 인프로세스 pub/sub(EventEmitter). SSE 라우트가 구독, reporter가 발행 |
 | `config.ts` | 환경변수/기본값. codex 모델은 env→`~/.codex/config.toml`→기본값 순으로 해석 |
 
@@ -84,8 +85,9 @@ app/
 │   └── useOrchestratorEvents.ts  # SSE 구독 훅("load 이후 연결" 로직 캡슐화)
 ├── projects/[name]/
 │   ├── page.tsx              # 워크스페이스: 조립만 담당
-│   ├── useWorkspace.ts       # 컨테이너 훅(runs/detail/selected 상태 + start/decide 액션 + 라이브 갱신)
-│   └── _components.tsx       # 프레젠테이셔널: NewTaskForm/RunList/RunDetailCard/ApprovalPanel/LiveLog
+│   ├── useWorkspace.ts       # 컨테이너 훅(runs/detail/selected 상태 + start/decide 액션 + 라이브 갱신). detail에 steps 포함 → SSE마다 리로드되어 시각화 라이브 갱신
+│   ├── _components.tsx       # 프레젠테이셔널: NewTaskForm/RunList/RunDetailCard/ApprovalPanel/LiveLog
+│   └── _viz.tsx              # RunViz — Step 배열 위 4개 뷰(리스트/칸반/노드그래프(SVG)/타임라인). 외부 viz 라이브러리 없음
 ├── history/page.tsx          # 전체 작업 내역(서버 컴포넌트, Prisma 직접 조회)
 ├── usage/page.tsx            # 토큰/비용 집계(서버 컴포넌트)
 ├── runs/[id]/page.tsx        # run 상세(+ DiffView)
@@ -102,11 +104,12 @@ app/
 - **Project** `{ name(PK), createdAt }` — 비용 그룹핑 단위. run이 새 이름을 쓰면 upsert로 자동 생성.
 - **Run** `{ id, project, title, brief, status, plan?, targetDir?, commit?, error?, … }`
   - `status`: `planning | awaiting_approval | building | verifying | committed | rejected | failed | cancelled`
-- **Usage** `{ engine(claude|codex), model, phase, input/output/cacheRead/cacheWrite, costUsd }` — 한 번의 모델 호출 사용량 + 환산 비용(기록 시점 계산).
-- **Event** `{ phase, level(info|warn|error), model?, message, ts }` — append-only 타임라인.
-- **Verdict** `{ attempt, passed, reason, diff?, raw? }` — codex 검증 시도별 결과(거절 사유 포함).
+- **Usage** `{ engine(claude|codex), model, phase, input/output/cacheRead/cacheWrite, costUsd, stepId? }` — 한 번의 모델 호출 사용량 + 환산 비용(기록 시점 계산).
+- **Event** `{ phase, level(info|warn|error), model?, message, stepId?, ts }` — append-only 타임라인.
+- **Verdict** `{ attempt, passed, reason, diff?, raw?, stepId? }` — 리뷰어 검증 시도별 결과(거절 사유 포함).
+- **Step** `{ kind(plan|build|verify|review|test|commit), label, engine?, model?, attempt, status(pending|running|passed|failed|skipped), summary?, parentId?, startedAt, endedAt?, orderIdx }` — **에이전트 작업 span(1급 노드)**. Event(점 로그)와 달리 생명주기(시작/종료)와 부모관계를 가짐. 대시보드의 리스트/칸반/노드그래프(parentId=엣지)/타임라인(startedAt→endedAt=막대)이 **모두 이 한 데이터**로 렌더됨.
 
-모두 `Run`에 `onDelete: Cascade`로 묶임.
+모두 `Run`에 `onDelete: Cascade`로 묶임. `stepId`는 로그/사용량/판정을 특정 Step에 귀속(옵셔널, 하위호환).
 
 ## 6. 실행 방법
 
@@ -130,8 +133,11 @@ npm run dev                  # orchestrator(:4000) + dashboard(:3737) 동시 실
 | `BUILD_MODEL` | `claude-sonnet-4-6` | 빌드 모델 |
 | `CODEX_MODEL` | env→`~/.codex/config.toml`→`gpt-5.5` | codex 모델(가격 산정용) |
 | `MAX_VERIFY_RETRIES` | `3` | 빌드→검증 재시도 상한 |
+| `REVIEW_POLICY` | `all` | 리뷰 팬아웃 커밋 정책. `all`=전원 통과, `any`=하나만 통과해도 커밋 |
+| `TEST_CMD` | — | 설정 시 테스트 러너(`CommandReviewer`)를 리뷰 팬아웃에 추가. 작업 디렉터리에서 실행, exit 0 = PASS |
 
-> codex CLI(`codex login`)가 설치·로그인되어 있어야 Verify 단계가 동작합니다.
+> codex CLI(`codex login`)가 설치·로그인되어 있어야 codex 리뷰어가 동작합니다.
+> 리뷰 팬아웃: 여러 `Reviewer`가 **같은 diff를 병렬로** 검토하며 각자 하나의 Step(그래프의 동시 노드)이 됩니다. 리뷰어 추가 = `runner.ts`의 `reviewers[]`에 한 줄(파이프라인 불변, OCP).
 
 ## 7. 작업 규칙 (꼭 지킬 것)
 

@@ -11,8 +11,9 @@ datasource db {
 /// Runs reference it by name (Run.project). Created explicitly from the
 /// dashboard, or auto-created (upserted) when a run names a new project.
 model Project {
-  name      String   @id
-  createdAt DateTime @default(now())
+  name             String   @id
+  defaultTargetDir String? // default repo dir pre-filled for new runs in this project
+  createdAt        DateTime @default(now())
 }
 
 /// One end-to-end task: brief -> plan -> build -> verify -> commit
@@ -32,8 +33,34 @@ model Run {
   events   Event[]
   verdicts Verdict[]
   usages   Usage[]
+  steps    Step[]
 
   @@index([project])
+}
+
+/// One agent's unit of work within a run (a "span"): plan, a single build
+/// attempt, a reviewer pass, a test run, etc. Unlike Event (point-in-time log)
+/// it has a lifecycle — start/end timestamps + status — and an optional parent,
+/// so the dashboard can render the same data as a list, kanban, node graph
+/// (parentId = edge), or timeline/gantt (startedAt→endedAt = bar).
+model Step {
+  id        String    @id @default(cuid())
+  runId     String
+  run       Run       @relation(fields: [runId], references: [id], onDelete: Cascade)
+  parentId  String? // DAG edge for the node graph; null = root
+  kind      String // plan | build | verify | review | test | commit
+  label     String // human name, e.g. "계획", "빌드 시도 2", "리뷰어: codex"
+  engine    String? // claude | codex | null (system)
+  model     String?
+  attempt   Int       @default(1)
+  status    String    @default("running") // pending | running | passed | failed | skipped
+  summary   String? // one-line result blurb
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+  orderIdx  Int       @default(0)
+
+  @@index([runId])
+  @@index([parentId])
 }
 
 /// One model invocation's token usage, with the API-equivalent cost in USD.
@@ -51,9 +78,11 @@ model Usage {
   cacheRead    Int      @default(0) // cached input tokens (read)
   cacheWrite   Int      @default(0) // cache-creation tokens (write)
   costUsd      Float    @default(0) // API-equivalent cost in USD, computed at record time
+  stepId       String? // the Step this usage is attributed to, if any
   ts           DateTime @default(now())
 
   @@index([runId])
+  @@index([stepId])
 }
 
 /// Append-only timeline of everything that happens in a run.
@@ -65,9 +94,11 @@ model Event {
   level   String   @default("info") // info | warn | error
   model   String? // opus | sonnet | codex | null
   message String
+  stepId  String? // the Step this log line belongs to, if any
   ts      DateTime @default(now())
 
   @@index([runId])
+  @@index([stepId])
 }
 
 /// Each codex verification attempt, including rejections with full reason.
@@ -80,7 +111,9 @@ model Verdict {
   reason  String // codex's full explanation (esp. rejection reason)
   diff    String? // snapshot of the diff that was reviewed
   raw     String? // raw codex JSON output, for debugging
+  stepId  String? // the review Step this verdict belongs to, if any
   ts      DateTime @default(now())
 
   @@index([runId])
+  @@index([stepId])
 }

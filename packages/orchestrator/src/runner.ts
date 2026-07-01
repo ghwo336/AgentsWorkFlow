@@ -2,6 +2,8 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { ClaudeBuilder, ClaudePlanner } from "./agents/claude-agent.js";
 import { CodexVerifier } from "./agents/codex-agent.js";
+import { CommandReviewer } from "./agents/command-reviewer.js";
+import type { Reviewer } from "./agents/types.js";
 import { ApprovalGate, type ApprovalDecision } from "./approval-gate.js";
 import { config } from "./config.js";
 import { git } from "./git.js";
@@ -14,6 +16,14 @@ export interface StartInput {
   brief: string;
   project?: string; // logical project for grouping costs; defaults to "default"
   targetDir?: string; // existing repo to work in; omit for a fresh workspace
+  workspaceName?: string; // name a fresh workspace folder instead of a random id
+}
+
+// Reduce a user-supplied workspace name to a safe single folder name — drop any
+// path separators (no escaping workspacesDir) and leading dots, keep it tidy.
+function sanitizeWorkspaceName(name: string): string {
+  const base = name.trim().split(/[\\/]/).pop() ?? "";
+  return base.replace(/[^a-zA-Z0-9._-]/g, "-").replace(/^\.+/, "");
 }
 
 // ── Composition root ───────────────────────────────────────────────────────
@@ -21,10 +31,19 @@ export interface StartInput {
 // pipeline depends on abstractions. Swapping an engine = changing one line here.
 const gate = new ApprovalGate();
 const store = new RunStore();
+
+// Reviewer fan-out. Add a reviewer here (another engine, a second code
+// reviewer, a linter) and it shows up as a parallel node — the pipeline is
+// unchanged (OCP). The optional test-runner is enabled by setting TEST_CMD.
+const reviewers: Reviewer[] = [
+  new CodexVerifier(config.verdictSchemaPath, config.codexModel),
+  ...(config.testCmd ? [new CommandReviewer("tests", config.testCmd)] : []),
+];
+
 const pipeline = new RunPipeline({
   planner: new ClaudePlanner(config.planModel),
   builder: new ClaudeBuilder(config.buildModel),
-  verifier: new CodexVerifier(config.verdictSchemaPath),
+  reviewers,
   gate,
   git,
   store,
@@ -39,7 +58,13 @@ export async function startRun(input: StartInput): Promise<string> {
     project,
   });
 
-  const targetDir = input.targetDir ?? join(config.workspacesDir, id);
+  // Precedence: explicit targetDir → per-run named workspace → project's
+  // remembered default → auto workspace named by run id.
+  const named = input.workspaceName ? sanitizeWorkspaceName(input.workspaceName) : "";
+  let targetDir = input.targetDir?.trim() || "";
+  if (!targetDir && named) targetDir = join(config.workspacesDir, named);
+  if (!targetDir) targetDir = (await store.getProjectDefaultDir(project)) || "";
+  if (!targetDir) targetDir = join(config.workspacesDir, id);
   await mkdir(targetDir, { recursive: true });
   await store.setTargetDir(id, targetDir);
 

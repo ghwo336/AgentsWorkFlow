@@ -2,18 +2,34 @@
 
 import { useParams } from "next/navigation";
 import {
+  AgentWorkSummary,
   ApprovalPanel,
   LiveLog,
   NewTaskForm,
+  ProjectSettings,
   RunDetailCard,
   RunList,
+  RunProgress,
 } from "./_components";
+import { RunViz } from "./_viz";
 import { useWorkspace } from "./useWorkspace";
 
 export default function ProjectWorkspace() {
   const params = useParams<{ name: string }>();
   const project = decodeURIComponent(params.name);
-  const { runs, selected, setSelected, detail, error, start, decide } = useWorkspace(project);
+  const {
+    runs,
+    selected,
+    setSelected,
+    detail,
+    error,
+    start,
+    decide,
+    revise,
+    defaultTargetDir,
+    saveProjectDir,
+    repos,
+  } = useWorkspace(project);
 
   return (
     <div className="wrap">
@@ -37,7 +53,8 @@ export default function ProjectWorkspace() {
       <div className="row cols" style={{ gap: 16, alignItems: "flex-start" }}>
         {/* Left: new task + runs list */}
         <div className="side" style={{ flex: "0 0 300px" }}>
-          <NewTaskForm onStart={start} />
+          <ProjectSettings defaultTargetDir={defaultTargetDir} repos={repos} onSave={saveProjectDir} />
+          <NewTaskForm onStart={start} defaultTargetDir={defaultTargetDir} repos={repos} />
           <RunList runs={runs} selected={selected} onSelect={setSelected} />
         </div>
 
@@ -47,13 +64,17 @@ export default function ProjectWorkspace() {
           {detail && (
             <>
               <RunDetailCard detail={detail} />
+              <RunProgress detail={detail} />
               {detail.status === "awaiting_approval" && (
                 <ApprovalPanel
                   plan={detail.plan ?? ""}
                   onApprove={(editedPlan) => decide(true, editedPlan)}
                   onReject={() => decide(false)}
+                  onRevise={(feedback) => revise(feedback)}
                 />
               )}
+              <AgentWorkSummary steps={detail.steps} />
+              <RunViz steps={detail.steps} />
               <LiveLog events={detail.events} />
             </>
           )}

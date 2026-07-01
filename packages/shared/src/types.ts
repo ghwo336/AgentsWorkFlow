@@ -18,9 +18,17 @@ export type Phase =
   | "commit"
   | "system";
 
+// A Step is one agent's unit of work within a run (a span with a lifecycle),
+// as opposed to Phase which is a coarse pipeline stage label on a log line.
+export type StepKind = "plan" | "build" | "verify" | "review" | "test" | "commit";
+
+export type StepStatus = "pending" | "running" | "passed" | "failed" | "skipped";
+
 // Server-Sent Event payload broadcast on every state change / log line.
+// `step` events carry the step-specific fields; older consumers can ignore
+// them since every added field is optional.
 export interface BusEvent {
-  type: "event" | "verdict" | "status" | "run";
+  type: "event" | "verdict" | "status" | "run" | "step";
   runId: string;
   phase?: Phase;
   level?: "info" | "warn" | "error";
@@ -29,6 +37,17 @@ export interface BusEvent {
   status?: RunStatus;
   attempt?: number;
   passed?: boolean;
+  // step fields (present when type === "step")
+  stepId?: string;
+  parentId?: string | null;
+  kind?: StepKind;
+  label?: string;
+  engine?: string | null;
+  stepStatus?: StepStatus;
+  summary?: string | null;
+  startedAt?: string;
+  endedAt?: string | null;
+  orderIdx?: number;
   ts: string;
 }
 

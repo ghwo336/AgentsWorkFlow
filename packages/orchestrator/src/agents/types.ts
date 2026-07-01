@@ -1,4 +1,5 @@
-import type { RunReporter } from "../reporter.js";
+import type { PhaseReporter } from "../reporter.js";
+import type { StepKind } from "@agent-loop/shared/types";
 
 // Outcome of a Claude phase (plan or build).
 export interface AgentResult {
@@ -9,6 +10,10 @@ export interface AgentResult {
 export interface PlanRequest {
   brief: string;
   cwd: string;
+  // For an interactive revision: the plan being revised + the user's requested
+  // changes. When set, the planner revises rather than starting from scratch.
+  previousPlan?: string;
+  feedback?: string;
 }
 
 export interface BuildRequest {
@@ -16,6 +21,14 @@ export interface BuildRequest {
   brief: string;
   cwd: string;
   feedback?: string;
+  // When set, the builder implements ONLY this one step of the plan, with the
+  // already-completed steps given as context.
+  step?: {
+    index: number; // 1-based
+    total: number;
+    description: string;
+    completed: string[]; // descriptions of steps already implemented & committed
+  };
 }
 
 export interface VerifyRequest {
@@ -42,13 +55,27 @@ export interface VerifyResult {
 // and any engine can be swapped behind these interfaces without touching the
 // orchestration logic (DIP/OCP).
 export interface Planner {
-  plan(req: PlanRequest, reporter: RunReporter): Promise<AgentResult>;
+  plan(req: PlanRequest, reporter: PhaseReporter): Promise<AgentResult>;
 }
 
 export interface Builder {
-  build(req: BuildRequest, reporter: RunReporter): Promise<AgentResult>;
+  build(req: BuildRequest, reporter: PhaseReporter): Promise<AgentResult>;
 }
 
 export interface Verifier {
   verify(req: VerifyRequest): Promise<VerifyResult>;
+}
+
+// A named reviewer that inspects the built diff and returns pass/fail. The
+// pipeline runs an injected array of these in parallel (a fan-out), so adding a
+// second code reviewer or a test-runner is just another array entry in the
+// composition root — the pipeline policy is unchanged (OCP). A "test" reviewer
+// (running the project's tests) is homomorphic to a code reviewer, so it wears
+// the same interface and joins the same fan-out.
+export interface Reviewer {
+  readonly name: string; // display label, e.g. "codex", "tests"
+  readonly kind: Extract<StepKind, "review" | "test">;
+  readonly engine: string; // claude | codex | system (for badge + pricing bucket)
+  readonly model: string; // model id for pricing; "-" when there's no model
+  review(req: VerifyRequest): Promise<VerifyResult>;
 }
