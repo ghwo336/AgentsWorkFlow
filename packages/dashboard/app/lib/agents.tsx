@@ -522,7 +522,7 @@ export function AgentChip({ agent, size = 26 }: { agent: Agent; size?: number })
 // Team roster — styled as our little office: a back wall with a window, clock
 // and plant, then desk pods grouped by role, each teammate sitting at a
 // workstation whose monitor glows in their role color.
-export function TeamRoster() {
+export function TeamRoster({ activeIds }: { activeIds?: Set<string> } = {}) {
   const groups: { role: Role; members: Agent[] }[] = [
     { role: "plan", members: membersOf("plan") },
     { role: "build", members: membersOf("build") },
@@ -548,16 +548,23 @@ export function TeamRoster() {
               {ROLE_LABEL[g.role]}
             </div>
             <div className="roster-members">
-              {g.members.map((a) => (
-                <div key={a.id} className="desk-seat" title={a.blurb}>
-                  <PixelAvatar agent={a} size={40} />
+              {g.members.map((a) => {
+                const working = activeIds?.has(a.id) ?? false;
+                return (
+                <div
+                  key={a.id}
+                  className={`desk-seat${working ? " is-working" : ""}`}
+                  title={working ? `${a.name} — 열일 중 🔥` : a.blurb}
+                >
+                  <PixelAvatar agent={a} size={40} active={working} />
                   <div className="desk-station">
                     <DeskLaptop laptop={a.laptop} w={62} />
                   </div>
                   <div className="roster-name pixel">{a.name}</div>
                   <div className="roster-engine muted small">{a.engineLabel}</div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         ))}

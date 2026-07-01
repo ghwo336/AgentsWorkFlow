@@ -289,6 +289,17 @@ td, th { text-align: left; padding: 8px; border-bottom: 1px solid var(--border);
 }
 .desk-seat .desk-station { margin-top: -9px; } /* desk sits in front of the person */
 .desk-seat:hover .desk-station { filter: brightness(1.12); }
+/* Currently working — warm ember glow behind the seat + the avatar's own fire. */
+.desk-seat.is-working {
+  border-radius: 8px;
+  background: radial-gradient(60% 55% at 50% 42%, rgba(255, 122, 46, .22), transparent 70%);
+  animation: seat-ember 1.6s ease-in-out infinite;
+}
+.desk-seat.is-working .roster-name { color: #ffb15a; }
+@keyframes seat-ember {
+  0%, 100% { background-color: rgba(255, 122, 46, .04); }
+  50% { background-color: rgba(255, 122, 46, .12); }
+}
 .roster-name { font-size: 12px; margin-top: 2px; }
 .roster-engine { font-size: 10px; }
 
@@ -392,6 +403,7 @@ td, th { text-align: left; padding: 8px; border-bottom: 1px solid var(--border);
   .pixel-avatar.is-active .pixel-avatar-body,
   .pixel-avatar.is-active .pixel-avatar-eye,
   .pixel-avatar-fire,
+  .desk-seat.is-working,
   .bob,
   .blink,
   .node-running {

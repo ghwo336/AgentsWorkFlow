@@ -12,8 +12,9 @@ import {
   RunProgress,
 } from "./_components";
 import { RunViz } from "./_viz";
-import { TeamRoster } from "../../lib/agents";
+import { agentForStep, TeamRoster } from "../../lib/agents";
 import { useWorkspace } from "./useWorkspace";
+import { useMemo } from "react";
 
 export default function ProjectWorkspace() {
   const params = useParams<{ name: string }>();
@@ -31,6 +32,16 @@ export default function ProjectWorkspace() {
     saveProjectDir,
     repos,
   } = useWorkspace(project);
+
+  // Who's actively working right now — the teammates behind any running step.
+  // Feeds the office roster so their avatar catches fire while they work.
+  const activeIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const s of detail?.steps ?? []) {
+      if (s.status === "running") ids.add(agentForStep(s).id);
+    }
+    return ids;
+  }, [detail?.steps]);
 
   return (
     <div className="wrap">
@@ -54,7 +65,7 @@ export default function ProjectWorkspace() {
       <div className="row cols" style={{ gap: 16, alignItems: "flex-start" }}>
         {/* Left: new task + runs list */}
         <div className="side" style={{ flex: "0 0 300px" }}>
-          <TeamRoster />
+          <TeamRoster activeIds={activeIds} />
           <ProjectSettings defaultTargetDir={defaultTargetDir} repos={repos} onSave={saveProjectDir} />
           <NewTaskForm onStart={start} defaultTargetDir={defaultTargetDir} />
           <RunList runs={runs} selected={selected} onSelect={setSelected} />
