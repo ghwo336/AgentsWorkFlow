@@ -24,6 +24,7 @@ model Run {
   brief     String // the original planning input from the user
   status    String   @default("planning") // planning | awaiting_approval | building | verifying | committed | rejected | failed | cancelled
   plan      String? // approved plan text (from Opus)
+  planSteps String? // JSON array of decomposed plan-step descriptions (for restart-safe resume)
   targetDir String? // working copy path for this run
   commit    String? // final commit hash on success
   error     String? // terminal error message, if any

@@ -509,8 +509,10 @@ export function RunProgress({ detail }: { detail: RunDetail }) {
   const groups = groupByPlanStep(detail.steps);
   const total = planStepTotal(detail.steps);
   const awaiting = detail.status === "awaiting_approval";
+  const building = detail.status === "building" || detail.status === "verifying";
   const planDone = !!planStep && planStep.status === "passed";
   const hojae = agentById("hojae");
+  const taekyung = agentById("taekyung");
 
   const planBadge = awaiting
     ? { icon: "⏳", label: "승인 대기", tone: "running" }
@@ -556,7 +558,27 @@ export function RunProgress({ detail }: { detail: RunDetail }) {
         <StepGroupRow key={g.no} group={g} total={total} />
       ))}
 
-      {groups.length === 0 && planDone && !awaiting && (
+      {/* Between approval and the first build span appearing, show that work is
+          spinning up so the click has a visible consequence. */}
+      {groups.length === 0 && planDone && !awaiting && building && (
+        <div className="flow-group" style={{ marginTop: 12 }}>
+          <div className="flow-group-head">
+            <b>구현 준비</b>
+            <span className="badge step-running">⏳ 시작 중</span>
+          </div>
+          <div className="flow-line">
+            <span className="flow-pill flow-running">
+              <span className="flow-ico">🔨</span>
+              <span className="blink" style={{ display: "inline-flex" }}>
+                <PixelAvatar agent={taekyung} size={18} />
+              </span>
+              <span className="flow-verb">태경이 구현을 준비하는 중…</span>
+            </span>
+          </div>
+        </div>
+      )}
+
+      {groups.length === 0 && planDone && !awaiting && !building && (
         <div className="muted small" style={{ marginTop: 10 }}>
           승인 후 단계별 구현이 시작됩니다.
         </div>
@@ -739,18 +761,34 @@ export function ApprovalPanel({
   onRevise,
 }: {
   plan: string;
-  onApprove: (editedPlan: string) => void;
-  onReject: () => void;
-  onRevise: (feedback: string) => void;
+  onApprove: (editedPlan: string) => void | Promise<void>;
+  onReject: () => void | Promise<void>;
+  onRevise: (feedback: string) => void | Promise<void>;
 }) {
   const [editedPlan, setEditedPlan] = useState(plan);
   const [feedback, setFeedback] = useState("");
   const [editing, setEditing] = useState(false); // preview (rendered) by default
+  // Immediate feedback on click — the approve/build kick is async and the panel
+  // only unmounts once the status flips, so without this the user sees nothing
+  // happen for a beat and assumes the click didn't register.
+  const [busy, setBusy] = useState<null | "approve" | "reject" | "revise">(null);
+
   useEffect(() => {
     setEditedPlan(plan);
     setFeedback(""); // a fresh plan arrived → clear the previous feedback
     setEditing(false);
+    setBusy(null); // a new/revised plan arrived → re-enable the controls
   }, [plan]);
+
+  async function run(kind: "approve" | "reject" | "revise", fn: () => void | Promise<void>) {
+    if (busy) return;
+    setBusy(kind);
+    try {
+      await fn();
+    } catch {
+      setBusy(null); // failed → let them retry (success unmounts/re-seeds the panel)
+    }
+  }
 
   return (
     <div className="panel" style={{ borderColor: "var(--accent)" }}>
@@ -759,6 +797,7 @@ export function ApprovalPanel({
         <button
           className="ghost small"
           style={{ boxShadow: "none", padding: "2px 8px" }}
+          disabled={!!busy}
           onClick={() => setEditing((v) => !v)}
         >
           {editing ? "👁 미리보기" : "✏️ 편집"}
@@ -773,12 +812,18 @@ export function ApprovalPanel({
         </div>
       )}
       <div className="row" style={{ marginTop: 10, gap: 8, flexWrap: "wrap" }}>
-        <button onClick={() => onApprove(editedPlan)}>✅ 승인 → 구현</button>
-        <button className="danger" onClick={onReject}>
-          ✖ 거절
+        <button disabled={!!busy} onClick={() => run("approve", () => onApprove(editedPlan))}>
+          {busy === "approve" ? "⏳ 구현 시작 중…" : "✅ 승인 → 구현"}
+        </button>
+        <button className="danger" disabled={!!busy} onClick={() => run("reject", onReject)}>
+          {busy === "reject" ? "처리 중…" : "✖ 거절"}
         </button>
         <span className="muted small" style={{ flex: "1 1 100%" }}>
-          {editing ? "편집 후 승인하면 수정된 계획으로 진행됩니다." : "✏️ 편집으로 직접 고칠 수 있어요."}
+          {busy === "approve"
+            ? "승인됨 — 태경이 구현을 준비하고 있어요…"
+            : editing
+              ? "편집 후 승인하면 수정된 계획으로 진행됩니다."
+              : "✏️ 편집으로 직접 고칠 수 있어요."}
         </span>
       </div>
 
@@ -793,14 +838,15 @@ export function ApprovalPanel({
           placeholder="예: 3단계가 너무 크니 둘로 나눠줘 / 인증은 JWT로 바꿔줘"
           value={feedback}
           onChange={(e) => setFeedback(e.target.value)}
+          disabled={!!busy}
         />
         <div className="row" style={{ marginTop: 8, gap: 8 }}>
           <button
             className="ghost"
-            disabled={!feedback.trim()}
-            onClick={() => onRevise(feedback.trim())}
+            disabled={!feedback.trim() || !!busy}
+            onClick={() => run("revise", () => onRevise(feedback.trim()))}
           >
-            🔁 수정 요청
+            {busy === "revise" ? "⏳ 다시 세우는 중…" : "🔁 수정 요청"}
           </button>
         </div>
       </div>

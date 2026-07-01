@@ -1,4 +1,3 @@
-import type { ApprovalGate } from "./approval-gate.js";
 import type { Builder, Planner, Reviewer, VerifyResult } from "./agents/types.js";
 import type { GitOps } from "./git.js";
 import type { RunReporter } from "./reporter.js";
@@ -16,7 +15,6 @@ export interface PipelineDeps {
   planner: Planner;
   builder: Builder;
   reviewers: Reviewer[]; // fan-out: every reviewer inspects the same diff
-  gate: ApprovalGate;
   git: GitOps;
   store: RunStore;
   config: PipelineConfig;
@@ -34,85 +32,80 @@ export interface PipelineDeps {
 export class RunPipeline {
   constructor(private readonly deps: PipelineDeps) {}
 
-  async run(
-    runId: string,
-    brief: string,
-    targetDir: string,
-    reporter: RunReporter
-  ): Promise<void> {
-    await this.deps.git.ensureRepo(targetDir);
-    const order = makeOrder();
-
-    const approved = await this.planAndApprove(runId, brief, targetDir, reporter, order);
-    if (approved === null) return;
-
-    await this.executeSteps(
-      runId,
-      approved.plan,
-      approved.steps,
-      brief,
-      targetDir,
-      reporter,
-      order,
-      approved.planStepId
-    );
-  }
-
-  // ①★ PLAN ↔ APPROVE, iterating. Opus proposes a plan; the user can approve,
-  // reject, or send feedback that re-plans (Opus revises with the prior plan +
-  // feedback) — an interactive back-and-forth until they're happy. Returns the
-  // approved plan + its decomposed steps, or null on reject/failure.
-  private async planAndApprove(
+  // ①★ PLAN → park at approval. Opus proposes a plan; we persist the plan text +
+  // its decomposed steps and set the run to awaiting_approval, then RETURN — we
+  // do NOT hold the approval in memory. The approval is resolved out-of-band
+  // (runner.resolveApproval) by reading the DB, so a pending approval survives an
+  // orchestrator restart. Used for the initial plan and for a revise (feedback →
+  // re-plan).
+  async plan(
     runId: string,
     brief: string,
     targetDir: string,
     reporter: RunReporter,
-    order: () => number
-  ): Promise<{ plan: string; steps: string[]; planStepId: string } | null> {
-    const { gate, store } = this.deps;
-    let previousPlan: string | undefined;
-    let feedback: string | undefined;
+    opts: { previousPlan?: string; feedback?: string } = {}
+  ): Promise<void> {
+    await this.deps.git.ensureRepo(targetDir);
+    const order = await this.resumeOrder(runId);
+    const planned = await this.planOnce(
+      brief,
+      targetDir,
+      reporter,
+      order,
+      opts.previousPlan,
+      opts.feedback
+    );
+    if (planned === null) return; // planOnce already marked the run failed
 
-    while (true) {
-      const planned = await this.plan(brief, targetDir, reporter, order, previousPlan, feedback);
-      if (planned === null) return null;
+    await this.deps.store.saveSteps(runId, planned.steps);
+    await reporter.status("awaiting_approval", { plan: planned.text });
+    await reporter.log(
+      "approval",
+      opts.feedback
+        ? "피드백을 반영해 계획을 수정했습니다 — 다시 승인/수정 대기 중입니다."
+        : "계획 완성 — 대시보드에서 승인/수정 대기 중입니다."
+    );
+  }
 
-      await reporter.status("awaiting_approval", { plan: planned.text });
-      await reporter.log(
-        "approval",
-        feedback
-          ? "피드백을 반영해 계획을 수정했습니다 — 다시 승인/수정 대기 중입니다."
-          : "계획 완성 — 대시보드에서 승인/수정 대기 중입니다."
-      );
-
-      const decision = await gate.wait(runId);
-
-      if (decision.action === "reject") {
-        await reporter.log("approval", "사용자가 계획을 거절했습니다.", { level: "warn" });
-        await reporter.status("rejected", { error: "사용자가 계획을 거절했습니다." });
-        return null;
-      }
-
-      if (decision.action === "revise") {
-        await reporter.log("approval", `수정 요청: ${decision.feedback}`);
-        previousPlan = planned.text;
-        feedback = decision.feedback;
-        continue; // loop → Opus re-plans with the feedback
-      }
-
-      // approve
-      const finalPlan = decision.editedPlan?.trim() || planned.text;
-      if (decision.editedPlan) await store.savePlan(runId, finalPlan);
-      await reporter.log("approval", "계획 승인됨. 구현을 시작합니다.");
-      return { plan: finalPlan, steps: planned.steps, planStepId: planned.stepId };
+  // ②③④ BUILD — resume after approval. Loads the approved plan + steps from the
+  // DB (so it works even if this process didn't produce the plan, e.g. after a
+  // restart), then walks the steps. Called by runner.resolveApproval on approve.
+  async build(runId: string, reporter: RunReporter): Promise<void> {
+    const st = await this.deps.store.getResumeState(runId);
+    if (!st || !st.targetDir || !st.plan) {
+      await reporter.status("failed", { error: "재개할 계획 정보가 없습니다." });
+      return;
     }
+    await this.deps.git.ensureRepo(st.targetDir);
+    const order = await this.resumeOrder(runId);
+    const planStepId = (await this.deps.store.getPlanStepId(runId)) ?? "";
+    // Fall back to the whole plan as a single step for runs planned before steps
+    // were persisted.
+    const steps = st.steps.length > 0 ? st.steps : [st.plan];
+    await this.executeSteps(
+      runId,
+      st.plan,
+      steps,
+      st.brief,
+      st.targetDir,
+      reporter,
+      order,
+      planStepId
+    );
+  }
+
+  // Monotonic orderIdx generator that continues past any steps already stored for
+  // this run, so a resumed phase sorts after the earlier ones.
+  private async resumeOrder(runId: string): Promise<() => number> {
+    let n = (await this.deps.store.getMaxOrderIdx(runId)) + 1;
+    return () => n++;
   }
 
   // ① PLAN (Opus) — returns the plan text, its step id, and the decomposed step
   // list, or null on failure. The machine-readable ```steps block is stripped
   // from the text shown for approval. When feedback is given, revises the prior
   // plan instead of starting fresh.
-  private async plan(
+  private async planOnce(
     brief: string,
     targetDir: string,
     reporter: RunReporter,
@@ -405,13 +398,6 @@ function parseSteps(planText: string): { steps: string[]; cleanText: string } {
     }
   }
   return { steps: [planText.trim()], cleanText: planText };
-}
-
-// Monotonic order index so steps sort deterministically even when timestamps
-// collide (SQLite stores millisecond precision).
-function makeOrder(): () => number {
-  let n = 0;
-  return () => n++;
 }
 
 // Store the agent's full summary (markdown structure preserved), not a clipped

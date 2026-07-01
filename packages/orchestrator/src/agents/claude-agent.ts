@@ -1,4 +1,5 @@
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import { isAbsolute, relative, resolve } from "node:path";
+import { query, type CanUseTool, type PermissionResult } from "@anthropic-ai/claude-agent-sdk";
 import type { PhaseReporter } from "../reporter.js";
 import type {
   AgentResult,
@@ -9,6 +10,64 @@ import type {
 } from "./types.js";
 
 type ClaudePhase = "plan" | "build";
+
+// ── Workspace confinement ────────────────────────────────────────────────────
+// Agents run with a cwd of their assigned workspace, but the tools (Bash/Write)
+// can reach anywhere on disk. Without a guard, an agent handed an EMPTY workspace
+// will happily wander up to a real repo it finds and edit THAT instead. These
+// keep every file write / command inside the workspace.
+function isInside(root: string, p: string): boolean {
+  const rel = relative(root, p);
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+// A canUseTool handler that denies any file operation or command reaching
+// outside `targetDir`. Paths inside are auto-approved (no human in the loop).
+function workspaceGuard(targetDir: string): CanUseTool {
+  const root = resolve(targetDir);
+  const deny = (message: string): PermissionResult => ({ behavior: "deny", message });
+  return async (toolName, input) => {
+    const pathArg =
+      (input.file_path as string) ??
+      (input.notebook_path as string) ??
+      (input.path as string) ??
+      "";
+    if (typeof pathArg === "string" && pathArg) {
+      const abs = isAbsolute(pathArg) ? pathArg : resolve(root, pathArg);
+      if (!isInside(root, abs)) {
+        return deny(
+          `작업 디렉터리(${root}) 밖의 경로는 사용할 수 없습니다: ${pathArg}. 작업은 반드시 이 폴더 안에서만 하세요.`
+        );
+      }
+    }
+    if (toolName === "Bash" && typeof input.command === "string") {
+      // Block commands that reach into a sibling repo under the srv tree.
+      const refs = (input.command as string).match(/\/(?:Users\/Shared\/srv|srv)\/[^\s"';|)&]+/g) ?? [];
+      for (const p of refs) {
+        if (!isInside(root, resolve(p))) {
+          return deny(
+            `작업 디렉터리(${root}) 밖의 경로(${p})를 참조하는 명령은 허용되지 않습니다. 이 폴더 안에서만 작업하세요.`
+          );
+        }
+      }
+    }
+    return { behavior: "allow" };
+  };
+}
+
+// A boundary reminder injected into the prompt (belt-and-braces with the guard):
+// the workspace IS the project root; if empty, scaffold here — don't go find
+// another repo to modify.
+function workspaceRule(cwd: string): string {
+  return [
+    `# 작업 디렉터리 (엄수)`,
+    `당신의 작업 폴더는 \`${cwd}\` 입니다.`,
+    `- 모든 파일 생성/수정/명령은 반드시 이 폴더 안에서만 하세요.`,
+    `- 상위 폴더로 나가거나 다른 프로젝트/저장소를 절대 건드리지 마세요.`,
+    `- 이 폴더가 비어 있으면 정상입니다 — 요청받은 것을 여기서 처음부터 새로 만드세요(scaffold).`,
+    `- 바깥에 기존 저장소가 보여도 그것을 수정 대상으로 삼지 마세요.`,
+  ].join("\n");
+}
 
 // Stream a Claude Agent SDK query, forwarding text + tool activity to the run
 // timeline (via the reporter), and return the final assistant text.
@@ -22,6 +81,7 @@ async function runClaude(
     permissionMode: "plan" | "bypassPermissions" | "default" | "acceptEdits";
     systemPrompt?: string;
     disallowedTools?: string[];
+    canUseTool?: CanUseTool;
   }
 ): Promise<AgentResult> {
   const label = phase === "plan" ? "opus" : "sonnet";
@@ -38,6 +98,7 @@ async function runClaude(
       ...(opts.permissionMode === "bypassPermissions"
         ? { allowDangerouslySkipPermissions: true }
         : {}),
+      ...(opts.canUseTool ? { canUseTool: opts.canUseTool } : {}),
       ...(opts.disallowedTools ? { disallowedTools: opts.disallowedTools } : {}),
       ...(opts.systemPrompt
         ? { systemPrompt: { type: "preset", preset: "claude_code", append: opts.systemPrompt } }
@@ -177,7 +238,7 @@ export class ClaudePlanner implements Planner {
   constructor(private readonly model: string) {}
 
   plan(req: PlanRequest, reporter: PhaseReporter): Promise<AgentResult> {
-    const prompt =
+    const body =
       req.previousPlan && req.feedback
         ? [
             `# Original request\n${req.brief}`,
@@ -186,13 +247,15 @@ export class ClaudePlanner implements Planner {
             `수정된 전체 계획을 처음부터 다시 제시하세요 (끝에 \`\`\`steps 블록 포함).`,
           ].join("\n\n")
         : req.brief;
+    const prompt = `${workspaceRule(req.cwd)}\n\n${body}`;
     return runClaude(reporter, "plan", this.model, prompt, {
       cwd: req.cwd,
       permissionMode: "plan",
       systemPrompt: PLAN_SYSTEM,
-      // The plan must land inline in the response, not in a file — block the
-      // write tools so it can't offload the plan to ~/.claude/plans.
-      disallowedTools: ["Write", "Edit", "MultiEdit", "NotebookEdit"],
+      canUseTool: workspaceGuard(req.cwd),
+      // The plan must land inline (not in a file), and the planner must not spawn
+      // a subagent that roams outside the workspace — so block writes + Task.
+      disallowedTools: ["Write", "Edit", "MultiEdit", "NotebookEdit", "Task"],
     });
   }
 }
@@ -217,6 +280,7 @@ export class ClaudeBuilder implements Builder {
       : `Implement this now in the working directory.`;
 
     const prompt = [
+      workspaceRule(req.cwd),
       `# Original request\n${req.brief}`,
       `# Approved plan (전체 맥락)\n${req.approvedPlan}`,
       completedBlock,
@@ -231,8 +295,13 @@ export class ClaudeBuilder implements Builder {
 
     return runClaude(reporter, "build", this.model, prompt, {
       cwd: req.cwd,
-      permissionMode: "bypassPermissions", // dev phase: everything auto-approved
+      // Auto-approve edits, but ONLY inside the workspace: the guard denies any
+      // write/command that reaches outside req.cwd (replaces blanket bypass).
+      permissionMode: "default",
+      canUseTool: workspaceGuard(req.cwd),
       systemPrompt: BUILD_SYSTEM,
+      // No roaming subagents — keep the builder in its own workspace.
+      disallowedTools: ["Task"],
     });
   }
 }

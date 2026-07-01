@@ -4,7 +4,7 @@ import { ClaudeBuilder, ClaudePlanner } from "./agents/claude-agent.js";
 import { CodexVerifier } from "./agents/codex-agent.js";
 import { CommandReviewer } from "./agents/command-reviewer.js";
 import type { Reviewer } from "./agents/types.js";
-import { ApprovalGate, type ApprovalDecision } from "./approval-gate.js";
+import type { ApprovalDecision } from "./approval-gate.js";
 import { config } from "./config.js";
 import { git } from "./git.js";
 import { RunPipeline } from "./pipeline.js";
@@ -29,7 +29,6 @@ function sanitizeWorkspaceName(name: string): string {
 // ── Composition root ───────────────────────────────────────────────────────
 // The only place that knows the concrete implementations; everything below the
 // pipeline depends on abstractions. Swapping an engine = changing one line here.
-const gate = new ApprovalGate();
 const store = new RunStore();
 
 // Reviewer fan-out. Add a reviewer here (another engine, a second code
@@ -44,11 +43,20 @@ const pipeline = new RunPipeline({
   planner: new ClaudePlanner(config.planModel),
   builder: new ClaudeBuilder(config.buildModel),
   reviewers,
-  gate,
   git,
   store,
   config,
 });
+
+// Log a fatal pipeline error onto the run and mark it failed. Shared by the
+// fire-and-forget plan/build kicks so an unexpected throw never goes silent.
+function onFatal(reporter: DbRunReporter) {
+  return async (err: unknown) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    await reporter.log("system", `치명적 오류: ${msg}`, { level: "error" });
+    await reporter.status("failed", { error: msg });
+  };
+}
 
 export async function startRun(input: StartInput): Promise<string> {
   const project = input.project?.trim() || "default";
@@ -68,17 +76,50 @@ export async function startRun(input: StartInput): Promise<string> {
   await mkdir(targetDir, { recursive: true });
   await store.setTargetDir(id, targetDir);
 
-  // Fire and forget; the pipeline drives itself and reports via events.
+  // Fire and forget: produce a plan and park at awaiting_approval. The pipeline
+  // reports via events; the approval is resolved later from the DB.
   const reporter = new DbRunReporter(id);
-  pipeline.run(id, input.brief, targetDir, reporter).catch(async (err) => {
-    await reporter.log("system", `치명적 오류: ${err?.message ?? err}`, { level: "error" });
-    await reporter.status("failed", { error: String(err?.message ?? err) });
-  });
+  pipeline.plan(id, input.brief, targetDir, reporter).catch(onFatal(reporter));
 
   return id;
 }
 
-// Called by the HTTP layer when the user clicks Approve/Reject in the dashboard.
-export function resolveApproval(runId: string, decision: ApprovalDecision): boolean {
-  return gate.resolve(runId, decision);
+// Called by the HTTP layer when the user clicks Approve/Reject/Revise. Unlike
+// the old in-memory gate, this reads the run's state from the DB — so a pending
+// approval survives an orchestrator restart. Returns false (→ 409) only when the
+// run isn't actually awaiting approval.
+export async function resolveApproval(
+  runId: string,
+  decision: ApprovalDecision
+): Promise<boolean> {
+  const st = await store.getResumeState(runId);
+  if (!st || st.status !== "awaiting_approval") return false;
+  const reporter = new DbRunReporter(runId);
+
+  if (decision.action === "reject") {
+    await reporter.log("approval", "사용자가 계획을 거절했습니다.", { level: "warn" });
+    await reporter.status("rejected", { error: "사용자가 계획을 거절했습니다." });
+    return true;
+  }
+
+  if (decision.action === "revise") {
+    await reporter.log("approval", `수정 요청: ${decision.feedback}`);
+    // Re-plan with the prior plan + feedback; parks at awaiting_approval again.
+    if (st.targetDir) {
+      pipeline
+        .plan(runId, st.brief, st.targetDir, reporter, {
+          previousPlan: st.plan ?? undefined,
+          feedback: decision.feedback,
+        })
+        .catch(onFatal(reporter));
+    }
+    return true;
+  }
+
+  // approve — persist any edits, then resume into the build phase from the DB.
+  if (decision.editedPlan?.trim()) await store.savePlan(runId, decision.editedPlan.trim());
+  await reporter.log("approval", "계획 승인됨. 구현을 시작합니다.");
+  await reporter.status("building");
+  pipeline.build(runId, reporter).catch(onFatal(reporter));
+  return true;
 }

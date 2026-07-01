@@ -41,7 +41,7 @@ app.post("/runs/:id/approve", async (req, reply) => {
   if (!parsed.success) {
     return reply.code(400).send({ error: parsed.error.flatten() });
   }
-  const ok = resolveApproval(id, parsed.data);
+  const ok = await resolveApproval(id, parsed.data);
   if (!ok) {
     return reply.code(409).send({ error: "No run awaiting approval with that id." });
   }
