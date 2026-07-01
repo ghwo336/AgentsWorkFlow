@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Run, RunDetail, RunEvent, StartRunInput, Step } from "../../lib/types";
+import { agentById, agentForEvent, agentForStep, PixelAvatar, ROLE_COLOR } from "../../lib/agents";
 
 export function StatusBadge({ status }: { status: string }) {
   return <span className={`badge b-${status}`}>{status}</span>;
@@ -268,12 +269,12 @@ export function RunDetailCard({ detail }: { detail: RunDetail }) {
 
 // Phase progress bar for one run. Turns the single status badge into an
 // at-a-glance "어디쯤인지" stepper across the fixed pipeline stages.
-const PHASES: { key: string; label: string }[] = [
-  { key: "planning", label: "기획" },
+const PHASES: { key: string; label: string; agentId?: string }[] = [
+  { key: "planning", label: "기획", agentId: "hojae" },
   { key: "awaiting_approval", label: "승인" },
-  { key: "building", label: "빌드" },
-  { key: "verifying", label: "검증" },
-  { key: "committed", label: "완료" },
+  { key: "building", label: "빌드", agentId: "taekyung" },
+  { key: "verifying", label: "검증", agentId: "juho" },
+  { key: "committed", label: "완료", agentId: "system" },
 ];
 
 function kindPhaseIndex(kind: string): number {
@@ -322,12 +323,24 @@ export function RunProgress({ detail }: { detail: RunDetail }) {
           else if (failed) state = i < reached ? "done" : i === reached ? "failed" : "pending";
           else state = i < reached ? "done" : i === reached ? "current" : "pending";
 
+          const agent = p.agentId ? agentById(p.agentId) : null;
           return (
             <div key={p.key} className={`step-node s-${state}`}>
               <div className="step-dot">
-                {state === "done" ? "✓" : state === "failed" ? "✕" : i + 1}
+                {agent ? (
+                  <span className={state === "current" ? "bob" : undefined}>
+                    <PixelAvatar agent={agent} size={30} />
+                  </span>
+                ) : state === "done" ? (
+                  "✓"
+                ) : state === "failed" ? (
+                  "✕"
+                ) : (
+                  "🔑"
+                )}
               </div>
               <div className="step-label">{p.label}</div>
+              {agent && <div className="step-who">{agent.name}</div>}
               {i < PHASES.length - 1 && <div className="step-bar" />}
             </div>
           );
@@ -337,35 +350,72 @@ export function RunProgress({ detail }: { detail: RunDetail }) {
   );
 }
 
+type SummaryFilter = "all" | "done" | "error";
+
 export function AgentWorkSummary({ steps }: { steps: Step[] }) {
+  const [filter, setFilter] = useState<SummaryFilter>("all");
   const visible = steps.filter((step) => step.kind !== "commit" || step.summary);
+
+  const doneCount = visible.filter((s) => s.status === "passed").length;
+  const errorCount = visible.filter((s) => s.status === "failed").length;
+  const shown = visible.filter((s) =>
+    filter === "done" ? s.status === "passed" : filter === "error" ? s.status === "failed" : true
+  );
+
+  const TABS: { key: SummaryFilter; label: string }[] = [
+    { key: "all", label: `전체 ${visible.length}` },
+    { key: "done", label: `✅ 구현 ${doneCount}` },
+    { key: "error", label: `⚠️ 오류 ${errorCount}` },
+  ];
 
   return (
     <div className="panel">
-      <b>에이전트별 작업 요약</b>
-      <div style={{ height: 10 }} />
+      <div className="row spread" style={{ marginBottom: 10 }}>
+        <b>작업 요약</b>
+        <div className="viz-tabs">
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              className={`viz-tab${filter === t.key ? " active" : ""}`}
+              onClick={() => setFilter(t.key)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
       {visible.length === 0 ? (
         <div className="muted small">아직 정리할 작업이 없습니다.</div>
+      ) : shown.length === 0 ? (
+        <div className="muted small">
+          {filter === "done" ? "아직 구현 완료된 작업이 없습니다." : "발생한 오류가 없습니다. 🎉"}
+        </div>
       ) : (
         <div className="agent-summary-list">
-          {visible.map((step) => (
-            <div key={step.id} className="agent-summary-item">
-              <div className="row spread agent-summary-head">
-                <div>
-                  <b>{step.label}</b>
-                  <span className="muted small">
-                    {" "}
-                    {agentLabel(step)}
-                    {step.attempt > 1 ? ` · ${step.attempt}차` : ""}
-                  </span>
+          {shown.map((step) => {
+            const agent = agentForStep(step);
+            return (
+              <div key={step.id} className={`agent-summary-item role-${agent.role}`}>
+                <div className="row spread agent-summary-head">
+                  <div className="agent-summary-who">
+                    <PixelAvatar agent={agent} size={34} />
+                    <div>
+                      <b style={{ color: ROLE_COLOR[agent.role] }}>{agent.name}</b>
+                      <span className="muted small">
+                        {" "}
+                        {agent.roleLabel} · {step.label}
+                        {step.attempt > 1 ? ` · ${step.attempt}차` : ""}
+                      </span>
+                    </div>
+                  </div>
+                  <span className={`badge step-${step.status}`}>{statusText(step.status)}</span>
                 </div>
-                <span className={`badge step-${step.status}`}>{statusText(step.status)}</span>
+                <div className="agent-summary-body">
+                  {step.summary ?? (step.status === "running" ? "진행 중입니다." : "요약이 없습니다.")}
+                </div>
               </div>
-              <div className="agent-summary-body">
-                {step.summary ?? (step.status === "running" ? "진행 중입니다." : "요약이 없습니다.")}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -432,36 +482,55 @@ export function ApprovalPanel({
   );
 }
 
-// Live timeline. Owns the auto-scroll-to-bottom behavior on new events.
+// Live timeline. Collapsed by default (raw firehose — only opened when needed);
+// owns auto-scroll-to-bottom while open.
 export function LiveLog({ events }: { events: RunEvent[] }) {
+  const [open, setOpen] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    logRef.current?.scrollTo(0, logRef.current.scrollHeight);
-  }, [events.length]);
+    if (open) logRef.current?.scrollTo(0, logRef.current.scrollHeight);
+  }, [events.length, open]);
 
   return (
     <div className="panel">
-      <b>실시간 로그</b>
+      <div
+        className="row spread"
+        style={{ cursor: "pointer" }}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <b>
+          실시간 로그 <span className="muted small">({events.length})</span>
+        </b>
+        <button className="ghost small" onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}>
+          {open ? "접기 ▾" : "펼치기 ▸"}
+        </button>
+      </div>
+      {!open ? null : (
+      <>
       <div style={{ height: 8 }} />
       <div className="log" ref={logRef}>
-        {events.map((ev) => (
-          <div key={ev.id} className="line">
-            <span className="ph">{ev.phase}</span>
-            <span className={ev.level === "error" ? "err" : ev.level === "warn" ? "warn" : ""}>
-              {ev.model ? `[${ev.model}] ` : ""}
-              {ev.message}
-            </span>
-          </div>
-        ))}
+        {events.map((ev) => {
+          const agent = agentForEvent(ev);
+          return (
+            <div key={ev.id} className="line">
+              <span className="ph">{ev.phase}</span>
+              <span className="who" title={`${agent.name} · ${agent.engineLabel}`}>
+                <PixelAvatar agent={agent} size={16} />
+                <span className="who-name" style={{ color: ROLE_COLOR[agent.role] }}>
+                  {agent.name}
+                </span>
+              </span>
+              <span className={ev.level === "error" ? "err" : ev.level === "warn" ? "warn" : ""}>
+                {ev.message}
+              </span>
+            </div>
+          );
+        })}
       </div>
+      </>
+      )}
     </div>
   );
-}
-
-function agentLabel(step: Step): string {
-  if (step.model) return step.model;
-  if (step.engine) return step.engine;
-  return step.kind === "commit" ? "system" : step.kind;
 }
 
 function statusText(status: string): string {

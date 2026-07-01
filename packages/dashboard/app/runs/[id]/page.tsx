@@ -1,6 +1,7 @@
 import { prisma } from "@agent-loop/shared/db";
 import { notFound } from "next/navigation";
 import { DiffView } from "./DiffView";
+import { agentById, agentForEvent, PixelAvatar, ROLE_COLOR } from "../../lib/agents";
 
 export const dynamic = "force-dynamic";
 
@@ -36,14 +37,22 @@ export default async function RunDetail({
 
       {run.plan && (
         <div className="panel">
-          <b>Approved plan (Opus)</b>
+          <b className="agent-chip">
+            <PixelAvatar agent={agentById("hojae")} size={22} />
+            <span style={{ color: ROLE_COLOR.plan }}>호재의 기획안</span>
+            <span className="muted small">(Opus)</span>
+          </b>
           <pre className="diff" style={{ whiteSpace: "pre-wrap" }}>{run.plan}</pre>
         </div>
       )}
 
       {/* codex verdicts — including every rejection with its full reason */}
       <div className="panel">
-        <b>codex 검증 내역</b>
+        <b className="agent-chip">
+          <PixelAvatar agent={agentById("juho")} size={22} />
+          <span style={{ color: ROLE_COLOR.verify }}>검증 내역</span>
+          <span className="muted small">(주호·동환 / codex)</span>
+        </b>
         {run.verdicts.length === 0 && <p className="muted small">아직 검증 없음.</p>}
         {run.verdicts.map((v) => (
           <div key={v.id} style={{ marginTop: 12 }}>
@@ -65,18 +74,26 @@ export default async function RunDetail({
       <div className="panel">
         <b>Timeline</b>
         <div className="log" style={{ maxHeight: "none", marginTop: 8 }}>
-          {run.events.map((ev) => (
-            <div key={ev.id} className="line">
-              <span className="ph">{ev.phase}</span>
-              <span className={ev.level === "error" ? "err" : ev.level === "warn" ? "warn" : ""}>
-                {ev.model ? `[${ev.model}] ` : ""}
-                {ev.message}
-              </span>
-              <span className="muted small" style={{ marginLeft: "auto" }}>
-                {new Date(ev.ts).toLocaleTimeString()}
-              </span>
-            </div>
-          ))}
+          {run.events.map((ev) => {
+            const agent = agentForEvent(ev);
+            return (
+              <div key={ev.id} className="line">
+                <span className="ph">{ev.phase}</span>
+                <span className="who" title={`${agent.name} · ${agent.engineLabel}`}>
+                  <PixelAvatar agent={agent} size={16} />
+                  <span className="who-name" style={{ color: ROLE_COLOR[agent.role] }}>
+                    {agent.name}
+                  </span>
+                </span>
+                <span className={ev.level === "error" ? "err" : ev.level === "warn" ? "warn" : ""}>
+                  {ev.message}
+                </span>
+                <span className="muted small" style={{ marginLeft: "auto" }}>
+                  {new Date(ev.ts).toLocaleTimeString()}
+                </span>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

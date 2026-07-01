@@ -1,9 +1,10 @@
 import "./globals.css";
 import type { ReactNode } from "react";
+import { LogoMark } from "./lib/agents";
 
 export const metadata = {
   title: "Agent Loop",
-  description: "Plan (Opus) → Build (Sonnet) → Verify (codex) → Commit",
+  description: "기획(호재) → 개발(태경·민재) → 검증(주호·동환) → 커밋",
 };
 
 export const viewport = {
@@ -16,14 +17,15 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en">
       <body>
         <nav className="nav">
-          <a href="/" style={{ color: "var(--text)" }}>
-            <b>🔁 Agent Loop</b>
+          <a href="/" className="logo" style={{ color: "var(--text)" }}>
+            <LogoMark size={26} />
+            <b>Agent Loop</b>
           </a>
           <a href="/">Projects</a>
           <a href="/history">History</a>
           <a href="/usage">Usage</a>
-          <span className="muted small" style={{ marginLeft: "auto" }}>
-            Opus → Sonnet → codex → commit
+          <span className="muted small pixel" style={{ marginLeft: "auto" }}>
+            호재 → 태경·민재 → 주호·동환
           </span>
         </nav>
         {children}

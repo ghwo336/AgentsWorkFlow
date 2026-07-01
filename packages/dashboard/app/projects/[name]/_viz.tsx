@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { Step } from "../../lib/types";
+import { agentForStep, PixelAvatar, ROLE_COLOR } from "../../lib/agents";
 
 // ── Shared step vocabulary (colors / icons / formatting) ────────────────────
 const STATUS_COLOR: Record<string, string> = {
@@ -105,7 +106,12 @@ function StepListView({ steps }: { steps: Step[] }) {
             <span className="step-dot" style={{ background: statusColor(s.status) }} />
             <span style={{ minWidth: 20 }}>{kindIcon(s.kind)}</span>
             <span className="step-label">{s.label}</span>
-            {s.model && <span className="muted small">{s.model}</span>}
+            <span className="agent-chip">
+              <PixelAvatar agent={agentForStep(s)} size={18} />
+              <span className="agent-chip-name" style={{ color: ROLE_COLOR[agentForStep(s).role] }}>
+                {agentForStep(s).name}
+              </span>
+            </span>
             <span className="step-spacer" />
             {s.summary && (
               <span className="muted small step-summary" title={s.summary}>
@@ -148,7 +154,12 @@ function KanbanView({ steps }: { steps: Step[] }) {
                   <div>
                     {kindIcon(s.kind)} {s.label}
                   </div>
-                  {s.model && <div className="muted small">{s.model}</div>}
+                  <div className="agent-chip" style={{ marginTop: 2 }}>
+                    <PixelAvatar agent={agentForStep(s)} size={16} />
+                    <span className="agent-chip-name" style={{ color: ROLE_COLOR[agentForStep(s).role] }}>
+                      {agentForStep(s).name}
+                    </span>
+                  </div>
                   {s.summary && <div className="muted small kan-summary">{s.summary}</div>}
                 </div>
               ))}
@@ -236,11 +247,14 @@ function GraphView({ steps }: { steps: Step[] }) {
                 strokeWidth={1.5}
                 className={s.status === "running" ? "node-running" : undefined}
               />
-              <text x={10} y={20} fill="var(--text)" fontSize={12.5}>
-                {kindIcon(s.kind)} {truncate(s.label, 18)}
+              <g transform="translate(8,6)">
+                <PixelAvatar agent={agentForStep(s)} size={22} />
+              </g>
+              <text x={36} y={20} fill="var(--text)" fontSize={12}>
+                {truncate(s.label, 13)}
               </text>
-              <text x={10} y={38} fill="var(--muted)" fontSize={11}>
-                {s.model ? truncate(s.model, 16) : s.engine ?? ""}
+              <text x={36} y={36} fill={ROLE_COLOR[agentForStep(s).role]} fontSize={11}>
+                {agentForStep(s).name} · {agentForStep(s).roleLabel}
               </text>
               <circle cx={NODE_W - 12} cy={14} r={5} fill={color} />
             </g>

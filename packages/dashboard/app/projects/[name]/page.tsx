@@ -12,6 +12,7 @@ import {
   RunProgress,
 } from "./_components";
 import { RunViz } from "./_viz";
+import { TeamRoster } from "../../lib/agents";
 import { useWorkspace } from "./useWorkspace";
 
 export default function ProjectWorkspace() {
@@ -53,6 +54,7 @@ export default function ProjectWorkspace() {
       <div className="row cols" style={{ gap: 16, alignItems: "flex-start" }}>
         {/* Left: new task + runs list */}
         <div className="side" style={{ flex: "0 0 300px" }}>
+          <TeamRoster />
           <ProjectSettings defaultTargetDir={defaultTargetDir} repos={repos} onSave={saveProjectDir} />
           <NewTaskForm onStart={start} defaultTargetDir={defaultTargetDir} repos={repos} />
           <RunList runs={runs} selected={selected} onSelect={setSelected} />

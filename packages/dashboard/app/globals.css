@@ -1,39 +1,73 @@
+/* Galmuri — a Korean pixel font (falls back to monospace offline). */
+@import url("https://cdn.jsdelivr.net/gh/quiple/galmuri/dist/galmuri.css");
+
 :root {
-  --bg: #0d1117;
-  --panel: #161b22;
-  --border: #30363d;
-  --text: #e6edf3;
-  --muted: #8b949e;
-  --accent: #2f81f7;
-  --green: #3fb950;
-  --red: #f85149;
-  --yellow: #d29922;
+  --bg: #12141c;
+  --panel: #1b1e2a;
+  --panel-2: #141722;
+  --border: #2f3550;
+  --text: #e8ebff;
+  --muted: #9aa0c0;
+  --accent: #5b9dff;
+  --green: #57d99a;
+  --red: #ff6b7d;
+  --yellow: #ffc861;
+
+  /* pipeline role colors (match app/lib/agents.tsx) */
+  --plan: #5b9dff;
+  --build: #57d99a;
+  --verify: #b98bff;
+
+  --px-shadow: 3px 3px 0 rgba(0, 0, 0, 0.45);
+  --pixel: "Galmuri11", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  background: var(--bg);
+  background:
+    radial-gradient(1200px 600px at 15% -10%, rgba(91, 157, 255, 0.08), transparent 60%),
+    radial-gradient(1000px 500px at 110% 0%, rgba(185, 139, 255, 0.07), transparent 55%),
+    var(--bg);
   color: var(--text);
   font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
 }
+
+/* Pixel font for labels/headings; body text stays monospace for readability. */
+.pixel,
+.nav b,
+.panel > b,
+.badge,
+button,
+.viz-tab,
+.step-label,
+.kan-head,
+.roster-name { font-family: var(--pixel); letter-spacing: 0.2px; }
 
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
 .nav {
   display: flex; gap: 16px; align-items: center;
-  padding: 12px 20px; border-bottom: 1px solid var(--border);
+  padding: 12px 20px;
+  border-bottom: 2px solid var(--border);
+  background: linear-gradient(var(--panel), var(--panel-2));
 }
 .nav b { font-size: 15px; }
+.nav .logo { display: inline-flex; align-items: center; gap: 8px; }
 
 .wrap { max-width: 1100px; margin: 0 auto; padding: 20px; }
 
 .panel {
-  background: var(--panel); border: 1px solid var(--border);
-  border-radius: 8px; padding: 16px; margin-bottom: 16px;
+  background: var(--panel);
+  border: 2px solid var(--border);
+  border-radius: 6px;
+  padding: 16px;
+  margin-bottom: 16px;
+  box-shadow: var(--px-shadow);
 }
+.panel > b { display: inline-block; }
 
 .row { display: flex; gap: 12px; align-items: center; }
 .spread { justify-content: space-between; }
@@ -41,8 +75,9 @@ a:hover { text-decoration: underline; }
 .small { font-size: 12px; }
 
 .badge {
-  display: inline-block; padding: 2px 8px; border-radius: 999px;
-  font-size: 12px; border: 1px solid var(--border);
+  display: inline-block; padding: 2px 8px; border-radius: 4px;
+  font-size: 11px; border: 2px solid var(--border);
+  background: var(--panel-2);
 }
 .b-committed { color: var(--green); border-color: var(--green); }
 .b-rejected, .b-failed { color: var(--red); border-color: var(--red); }
@@ -50,30 +85,36 @@ a:hover { text-decoration: underline; }
 .b-awaiting_approval { color: var(--accent); border-color: var(--accent); }
 
 button {
-  background: var(--accent); color: white; border: none;
-  padding: 8px 14px; border-radius: 6px; cursor: pointer; font: inherit;
+  background: var(--accent); color: #0b1020; border: 2px solid rgba(0, 0, 0, 0.35);
+  padding: 8px 14px; border-radius: 6px; cursor: pointer; font: inherit; font-weight: 600;
+  box-shadow: var(--px-shadow); transition: transform .05s ease, box-shadow .05s ease;
 }
-button.ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
-button.danger { background: var(--red); }
-button:disabled { opacity: .5; cursor: not-allowed; }
+button:hover:not(:disabled) { filter: brightness(1.05); }
+button:active:not(:disabled) { transform: translate(3px, 3px); box-shadow: none; }
+button.ghost { background: var(--panel-2); border: 2px solid var(--border); color: var(--text); }
+button.danger { background: var(--red); color: #2a0a10; }
+button:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
 
 textarea, input, select {
-  width: 100%; background: #0d1117; color: var(--text);
-  border: 1px solid var(--border); border-radius: 6px; padding: 8px; font: inherit;
+  width: 100%; background: var(--panel-2); color: var(--text);
+  border: 2px solid var(--border); border-radius: 6px; padding: 8px; font: inherit;
 }
 select { cursor: pointer; }
+textarea:focus, input:focus, select:focus { outline: none; border-color: var(--accent); }
 
 .log {
   font-size: 12.5px; max-height: 420px; overflow-y: auto;
   display: flex; flex-direction: column; gap: 4px;
 }
-.log .line { display: flex; gap: 8px; }
+.log .line { display: flex; gap: 8px; align-items: center; }
 .log .ph { color: var(--muted); min-width: 64px; }
 .log .err { color: var(--red); }
 .log .warn { color: var(--yellow); }
+.log .who { display: inline-flex; align-items: center; gap: 4px; min-width: 74px; }
+.log .who-name { font-family: var(--pixel); font-size: 11px; }
 
 pre.diff {
-  background: #0d1117; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--panel-2); border: 2px solid var(--border); border-radius: 6px;
   padding: 12px; overflow-x: auto; font-size: 12px; max-height: 400px;
 }
 .diff .add { color: var(--green); }
@@ -85,20 +126,59 @@ td, th { text-align: left; padding: 8px; border-bottom: 1px solid var(--border);
 /* Horizontal scroll container for wide tables on narrow screens. */
 .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
+/* ── Agent chips / roster ───────────────────────────────────────── */
+.agent-chip { display: inline-flex; align-items: center; gap: 6px; }
+.agent-chip-name { font-family: var(--pixel); font-size: 12px; }
+
+/* Office scene: back wall (window/clock/plant) over a wood floor with desks. */
+.office { position: relative; overflow: hidden; }
+.office-wall {
+  margin: -16px -16px 0; padding: 8px 12px;
+  display: flex; align-items: center; gap: 8px;
+  background: linear-gradient(#232a42, #1c2133);
+  border-bottom: 2px solid var(--border);
+}
+.office-deco { margin-left: auto; display: flex; align-items: flex-end; gap: 8px; }
+
+.office-floor {
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 10px 10px 4px;
+  border-radius: 6px;
+  background:
+    repeating-linear-gradient(90deg, rgba(0,0,0,0.10) 0 1px, transparent 1px 26px),
+    linear-gradient(#3a2f24, #2c2419);
+}
+
+.desk-pod {
+  border-left: 3px solid var(--border);
+  padding-left: 10px;
+}
+.roster-role { font-family: var(--pixel); font-size: 12px; margin-bottom: 6px; }
+.roster-members { display: flex; gap: 10px; flex-wrap: wrap; }
+.desk-seat {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 1px; width: 70px; text-align: center;
+}
+.desk-seat .desk-station { margin-top: -9px; } /* desk sits in front of the person */
+.desk-seat:hover .desk-station { filter: brightness(1.12); }
+.roster-name { font-size: 12px; margin-top: 2px; }
+.roster-engine { font-size: 10px; }
+
 /* ── Step visualizations (list / kanban / graph / timeline) ─────── */
 .viz-tabs { display: flex; gap: 4px; }
 .viz-tab {
-  background: transparent; border: 1px solid var(--border); color: var(--muted);
-  padding: 4px 10px; border-radius: 6px; font-size: 12px;
+  background: var(--panel-2); border: 2px solid var(--border); color: var(--muted);
+  padding: 4px 10px; border-radius: 6px; font-size: 11px; cursor: pointer;
+  box-shadow: none;
 }
-.viz-tab.active { color: var(--text); border-color: var(--accent); background: rgba(47,129,247,.12); }
+.viz-tab.active { color: var(--text); border-color: var(--accent); background: rgba(91, 129, 247, .14); }
 
 /* progress bar */
-.progress { height: 6px; background: #0d1117; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
+.progress { height: 8px; background: var(--panel-2); border: 2px solid var(--border); border-radius: 999px; overflow: hidden; }
 .progress-fill { height: 100%; background: var(--green); transition: width .3s ease; }
 
 /* list rows */
-.step-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; }
+.step-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 2px solid var(--border); border-radius: 6px; background: var(--panel-2); }
 .step-dot { width: 8px; height: 8px; border-radius: 999px; flex: 0 0 auto; }
 .step-label { font-weight: 500; }
 .step-spacer { flex: 1 1 auto; }
@@ -107,12 +187,16 @@ td, th { text-align: left; padding: 8px; border-bottom: 1px solid var(--border);
 /* agent work summary */
 .agent-summary-list { display: flex; flex-direction: column; gap: 10px; }
 .agent-summary-item {
-  border: 1px solid var(--border);
+  border: 2px solid var(--border);
   border-radius: 6px;
   padding: 10px;
-  background: #0d1117;
+  background: var(--panel-2);
 }
+.agent-summary-item.role-plan { border-left: 4px solid var(--plan); }
+.agent-summary-item.role-build { border-left: 4px solid var(--build); }
+.agent-summary-item.role-verify { border-left: 4px solid var(--verify); }
 .agent-summary-head { align-items: flex-start; gap: 10px; }
+.agent-summary-who { display: flex; align-items: center; gap: 8px; }
 .agent-summary-body {
   margin-top: 6px;
   color: var(--text);
@@ -127,15 +211,15 @@ td, th { text-align: left; padding: 8px; border-bottom: 1px solid var(--border);
 
 /* kanban */
 .kanban { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(180px, 1fr); gap: 10px; }
-.kan-col { background: #0d1117; border: 1px solid var(--border); border-radius: 8px; padding: 10px; min-width: 180px; }
+.kan-col { background: var(--panel-2); border: 2px solid var(--border); border-radius: 8px; padding: 10px; min-width: 180px; }
 .kan-head { font-weight: 600; font-size: 12.5px; margin-bottom: 8px; }
-.kan-card { background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--border); border-radius: 6px; padding: 8px; margin-bottom: 8px; font-size: 12.5px; }
+.kan-card { background: var(--panel); border: 2px solid var(--border); border-left: 3px solid var(--border); border-radius: 6px; padding: 8px; margin-bottom: 8px; font-size: 12.5px; }
 .kan-summary { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* gantt */
 .gantt-row { display: flex; align-items: center; gap: 10px; }
 .gantt-label { flex: 0 0 150px; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.gantt-track { position: relative; flex: 1 1 auto; height: 18px; background: #0d1117; border: 1px solid var(--border); border-radius: 4px; }
+.gantt-track { position: relative; flex: 1 1 auto; height: 18px; background: var(--panel-2); border: 2px solid var(--border); border-radius: 4px; }
 .gantt-bar { position: absolute; top: 2px; bottom: 2px; border-radius: 3px; min-width: 3px; }
 .gantt-dur { flex: 0 0 56px; text-align: right; }
 
@@ -143,26 +227,31 @@ td, th { text-align: left; padding: 8px; border-bottom: 1px solid var(--border);
 .node-running { animation: pulse 1.2s ease-in-out infinite; }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .5; } }
 
+@keyframes bob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
+.bob { animation: bob 1.6s ease-in-out infinite; }
+
 /* run phase stepper (진행도) */
 .stepper { display: flex; align-items: flex-start; }
 .step-node { position: relative; flex: 1 1 0; display: flex; flex-direction: column; align-items: center; text-align: center; }
-.step-dot {
-  width: 26px; height: 26px; border-radius: 50%;
+.step-node .step-dot {
+  width: 44px; height: 44px; border-radius: 8px;
   display: flex; align-items: center; justify-content: center;
   font-size: 12px; font-weight: 600; z-index: 1;
   border: 2px solid var(--border); background: var(--panel); color: var(--muted);
+  overflow: hidden;
 }
-.step-label { margin-top: 6px; font-size: 12px; color: var(--muted); }
-.step-bar { position: absolute; top: 12px; left: 50%; width: 100%; height: 2px; background: var(--border); z-index: 0; }
+.step-node .step-label { margin-top: 6px; font-size: 12px; color: var(--muted); }
+.step-node .step-who { font-size: 10px; color: var(--muted); }
+.step-bar { position: absolute; top: 21px; left: 50%; width: 100%; height: 3px; background: var(--border); z-index: 0; }
 
-.s-done .step-dot { border-color: var(--green); background: var(--green); color: var(--bg); }
+.s-done .step-dot { border-color: var(--green); background: rgba(87, 217, 154, .12); color: var(--green); }
 .s-done .step-bar { background: var(--green); }
 .s-done .step-label { color: var(--text); }
 
-.s-current .step-dot { border-color: var(--accent); color: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+.s-current .step-dot { border-color: var(--accent); color: var(--accent); }
 .s-current .step-label { color: var(--text); font-weight: 600; }
 
-.s-failed .step-dot { border-color: var(--red); background: var(--red); color: var(--bg); }
+.s-failed .step-dot { border-color: var(--red); background: rgba(255, 107, 125, .12); color: var(--red); }
 .s-failed .step-label { color: var(--red); }
 
 /* ── Responsive (mobile) ───────────────────────────────────────── */
@@ -177,9 +266,13 @@ td, th { text-align: left; padding: 8px; border-bottom: 1px solid var(--border);
 
   .panel { padding: 14px; border-radius: 6px; }
 
-  /* Two-column workspace (sidebar + detail) stacks vertically. */
-  .cols { flex-direction: column; }
-  .cols > .side { flex: 1 1 auto !important; width: 100%; }
+  /* Two-column workspace (sidebar + detail) stacks vertically. Force both
+     columns to fill the width — otherwise the detail column (no width, only
+     flex:1) sizes to its content on the cross axis and a wide view (kanban /
+     node-graph) drags the whole page wider than the screen. */
+  .cols { flex-direction: column; align-items: stretch !important; }
+  .cols > * { min-width: 0; width: 100%; }
+  .cols > .side { flex: 1 1 auto !important; }
 
   /* Usage headline cards: two per row instead of one cramped strip. */
   .stats { flex-wrap: wrap; }
@@ -196,4 +289,6 @@ td, th { text-align: left; padding: 8px; border-bottom: 1px solid var(--border);
   .gantt-label { flex-basis: 92px; }
   .gantt-dur { flex-basis: 44px; }
   .step-summary { max-width: 140px; }
+
+  .step-node .step-dot { width: 36px; height: 36px; }
 }
