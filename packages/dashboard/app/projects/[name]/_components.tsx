@@ -392,31 +392,88 @@ export function AgentWorkSummary({ steps }: { steps: Step[] }) {
         </div>
       ) : (
         <div className="agent-summary-list">
-          {shown.map((step) => {
-            const agent = agentForStep(step);
-            return (
-              <div key={step.id} className={`agent-summary-item role-${agent.role}`}>
-                <div className="row spread agent-summary-head">
-                  <div className="agent-summary-who">
-                    <PixelAvatar agent={agent} size={34} />
-                    <div>
-                      <b style={{ color: ROLE_COLOR[agent.role] }}>{agent.name}</b>
-                      <span className="muted small">
-                        {" "}
-                        {agent.roleLabel} · {step.label}
-                        {step.attempt > 1 ? ` · ${step.attempt}차` : ""}
-                      </span>
-                    </div>
-                  </div>
-                  <span className={`badge step-${step.status}`}>{statusText(step.status)}</span>
-                </div>
-                <div className="agent-summary-body">
-                  {step.summary ?? (step.status === "running" ? "진행 중입니다." : "요약이 없습니다.")}
-                </div>
-              </div>
-            );
-          })}
+          {shown.map((step) => (
+            <SummaryItem key={step.id} step={step} />
+          ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+// codex/infra execution failures (vs. a genuine review rejection). These mean
+// "codex couldn't run", not "your code is wrong" — labelled distinctly so a
+// transient failure isn't mistaken for a real defect.
+const INFRA_FAIL =
+  /(failed to run|could not parse|timed out|exceeded maxbuffer|reading additional input|무한\s*대기|실행(에|)\s*실패|stdin)/i;
+
+type Outcome = { icon: string; label: string; tone: string };
+
+function stepOutcome(step: Step): Outcome {
+  const isVerify = step.kind === "verify" || step.kind === "review" || step.kind === "test";
+  if (step.status === "running") return { icon: "⏳", label: isVerify ? "검토 중" : "진행 중", tone: "running" };
+  if (step.status === "skipped") return { icon: "⏭️", label: "건너뜀", tone: "pending" };
+  if (isVerify) {
+    if (step.status === "passed") return { icon: "✅", label: "통과 · 문제없음", tone: "passed" };
+    if (step.status === "failed") {
+      return step.summary && INFRA_FAIL.test(step.summary)
+        ? { icon: "⚠️", label: "실행오류 · 검토못함", tone: "warn" }
+        : { icon: "❌", label: "오류 지적", tone: "failed" };
+    }
+  }
+  if (step.status === "passed") {
+    if (step.kind === "plan") return { icon: "📋", label: "기획 완료", tone: "passed" };
+    if (step.kind === "build") return { icon: "🔨", label: "구현 완료", tone: "passed" };
+    if (step.kind === "commit") return { icon: "✅", label: "커밋", tone: "passed" };
+    return { icon: "✅", label: "완료", tone: "passed" };
+  }
+  if (step.status === "failed") return { icon: "❌", label: "실패", tone: "failed" };
+  return { icon: "•", label: "대기", tone: "pending" };
+}
+
+// One work-summary card: who did it, the outcome verdict, and the summary body
+// (codex review reason / build "무엇을 했는지"), clamped with a 더보기 toggle.
+function SummaryItem({ step }: { step: Step }) {
+  const agent = agentForStep(step);
+  const outcome = stepOutcome(step);
+  const [expanded, setExpanded] = useState(false);
+  const body =
+    step.summary?.trim() || (step.status === "running" ? "진행 중입니다." : "요약이 없습니다.");
+  const long = body.length > 180;
+  const shownBody = long && !expanded ? `${body.slice(0, 180).trimEnd()}…` : body;
+  const bodyLabel =
+    step.kind === "build" ? "구현 내용" : step.kind === "plan" ? "계획 요약" : "리뷰 결과";
+
+  return (
+    <div className={`agent-summary-item role-${agent.role}`}>
+      <div className="row spread agent-summary-head">
+        <div className="agent-summary-who">
+          <PixelAvatar agent={agent} size={34} />
+          <div>
+            <b style={{ color: ROLE_COLOR[agent.role] }}>{agent.name}</b>
+            <span className="muted small">
+              {" "}
+              {agent.roleLabel} · {step.label}
+              {step.attempt > 1 ? ` · ${step.attempt}차` : ""}
+            </span>
+          </div>
+        </div>
+        <span className={`badge step-${outcome.tone}`} style={{ whiteSpace: "nowrap" }}>
+          {outcome.icon} {outcome.label}
+        </span>
+      </div>
+      <div className="agent-summary-body">
+        <span className="muted small">{bodyLabel} · </span>
+        {shownBody}
+      </div>
+      {long && (
+        <button
+          className="ghost small"
+          style={{ marginTop: 6, boxShadow: "none", padding: "2px 8px" }}
+          onClick={() => setExpanded((v) => !v)}
+        >
+          {expanded ? "접기 ▾" : "더보기 ▸"}
+        </button>
       )}
     </div>
   );
@@ -533,17 +590,3 @@ export function LiveLog({ events }: { events: RunEvent[] }) {
   );
 }
 
-function statusText(status: string): string {
-  switch (status) {
-    case "running":
-      return "진행중";
-    case "passed":
-      return "완료";
-    case "failed":
-      return "실패";
-    case "skipped":
-      return "건너뜀";
-    default:
-      return "대기";
-  }
-}

@@ -207,6 +207,7 @@ td, th { text-align: left; padding: 8px; border-bottom: 1px solid var(--border);
 .step-passed { color: var(--green); border-color: var(--green); }
 .step-failed { color: var(--red); border-color: var(--red); }
 .step-running { color: var(--yellow); border-color: var(--yellow); }
+.step-warn { color: var(--yellow); border-color: var(--yellow); }
 .step-pending, .step-skipped { color: var(--muted); border-color: var(--border); }
 
 /* kanban */
