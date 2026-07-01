@@ -88,6 +88,7 @@ button {
   background: var(--accent); color: #0b1020; border: 2px solid rgba(0, 0, 0, 0.35);
   padding: 8px 14px; border-radius: 6px; cursor: pointer; font: inherit; font-weight: 600;
   box-shadow: var(--px-shadow); transition: transform .05s ease, box-shadow .05s ease;
+  white-space: nowrap; /* never break button labels mid-word */
 }
 button:hover:not(:disabled) { filter: brightness(1.05); }
 button:active:not(:disabled) { transform: translate(3px, 3px); box-shadow: none; }

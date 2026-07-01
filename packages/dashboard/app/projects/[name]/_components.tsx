@@ -772,12 +772,12 @@ export function ApprovalPanel({
           <Markdown>{editedPlan}</Markdown>
         </div>
       )}
-      <div className="row" style={{ marginTop: 10, gap: 8 }}>
+      <div className="row" style={{ marginTop: 10, gap: 8, flexWrap: "wrap" }}>
         <button onClick={() => onApprove(editedPlan)}>✅ 승인 → 구현</button>
         <button className="danger" onClick={onReject}>
           ✖ 거절
         </button>
-        <span className="muted small">
+        <span className="muted small" style={{ flex: "1 1 100%" }}>
           {editing ? "편집 후 승인하면 수정된 계획으로 진행됩니다." : "✏️ 편집으로 직접 고칠 수 있어요."}
         </span>
       </div>
