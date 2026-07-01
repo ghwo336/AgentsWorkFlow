@@ -26,6 +26,20 @@ function sanitizeWorkspaceName(name: string): string {
   return base.replace(/[^a-zA-Z0-9._-]/g, "-").replace(/^\.+/, "");
 }
 
+// A readable, filesystem-safe folder name from a project name — but Unicode-
+// friendly (keeps Korean etc.), unlike sanitizeWorkspaceName. Only strips path
+// separators / control / illegal chars and leading dots so "투두리스트" stays
+// "투두리스트". Returns "" if nothing usable is left (caller falls back).
+function projectDirName(project: string): string {
+  const base = project.trim().split(/[\\/]/).pop() ?? "";
+  return base
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\x00-\x1f<>:"|?*]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/^\.+/, "")
+    .trim();
+}
+
 // ── Composition root ───────────────────────────────────────────────────────
 // The only place that knows the concrete implementations; everything below the
 // pipeline depends on abstractions. Swapping an engine = changing one line here.
@@ -67,12 +81,17 @@ export async function startRun(input: StartInput): Promise<string> {
   });
 
   // Precedence: explicit targetDir → per-run named workspace → project's
-  // remembered default → auto workspace named by run id.
+  // remembered default → the project's own folder (agent-workspaces/<project>).
+  // In the last case we persist it as the project default so every run in the
+  // project lands in — and accumulates within — one folder, with no path input.
   const named = input.workspaceName ? sanitizeWorkspaceName(input.workspaceName) : "";
   let targetDir = input.targetDir?.trim() || "";
   if (!targetDir && named) targetDir = join(config.workspacesDir, named);
   if (!targetDir) targetDir = (await store.getProjectDefaultDir(project)) || "";
-  if (!targetDir) targetDir = join(config.workspacesDir, id);
+  if (!targetDir) {
+    targetDir = join(config.workspacesDir, projectDirName(project) || id);
+    await store.setProjectDefaultDir(project, targetDir); // remember it for next time
+  }
   await mkdir(targetDir, { recursive: true });
   await store.setTargetDir(id, targetDir);
 

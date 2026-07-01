@@ -84,30 +84,16 @@ function briefFromChat(messages: ChatMessage[]): string {
 export function NewTaskForm({
   onStart,
   defaultTargetDir = "",
-  repos,
 }: {
   onStart: (input: StartRunInput) => Promise<boolean>;
   defaultTargetDir?: string;
-  repos: string[];
 }) {
   const [title, setTitle] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
-  const [targetDir, setTargetDir] = useState(defaultTargetDir);
-  const [workspaceName, setWorkspaceName] = useState("");
-  const seeded = useRef(false);
   const threadRef = useRef<HTMLDivElement>(null);
-
-  // Seed the repo field once the project's default arrives (async), unless the
-  // user already typed something.
-  useEffect(() => {
-    if (!seeded.current && defaultTargetDir && !targetDir) {
-      setTargetDir(defaultTargetDir);
-    }
-    if (defaultTargetDir) seeded.current = true;
-  }, [defaultTargetDir, targetDir]);
 
   // Keep the newest turn in view as the thread grows.
   useEffect(() => {
@@ -135,23 +121,18 @@ export function NewTaskForm({
 
   async function startRun() {
     if (!title.trim() || messages.length === 0) return;
-    const ok = await onStart({
-      title: title.trim(),
-      brief: briefFromChat(messages),
-      targetDir: targetDir || undefined,
-      // Only meaningful for a fresh (temp) workspace, i.e. no repo selected.
-      workspaceName: targetDir ? undefined : workspaceName.trim() || undefined,
-    });
+    // No path input: the orchestrator runs this in the project's own folder
+    // (agent-workspaces/<project>), creating/reusing it automatically.
+    const ok = await onStart({ title: title.trim(), brief: briefFromChat(messages) });
     if (ok) {
       setTitle("");
       setMessages([]);
       setInput("");
-      setWorkspaceName("");
       setChatError(null);
     }
   }
 
-  const usingDefault = !!defaultTargetDir && targetDir === defaultTargetDir;
+  const folderName = defaultTargetDir ? defaultTargetDir.replace(/\/+$/, "").split("/").pop() : "";
   const hasChat = messages.some((m) => m.role === "user");
   const canStart = !!title.trim() && hasChat && !sending;
 
@@ -213,29 +194,18 @@ export function NewTaskForm({
 
       <div style={{ height: 12, borderBottom: "1px solid var(--border)", marginBottom: 12 }} />
 
-      <RepoPicker value={targetDir} repos={repos} onChange={setTargetDir} />
-      <div className="muted small" style={{ marginTop: 4 }}>
-        {usingDefault
-          ? "프로젝트 기본 저장소 사용 중"
-          : targetDir
-            ? "이 작업에만 적용되는 저장소"
-            : "새 임시 폴더에서 작업합니다 (아래에서 이름 지정 가능)"}
+      <div className="muted small">
+        📁 이 프로젝트 폴더에서 작업합니다
+        {folderName ? (
+          <>
+            {" — "}
+            <code>{folderName}</code>
+          </>
+        ) : (
+          " (첫 작업 시 자동 생성)"
+        )}
+        . 다른 저장소를 쓰려면 위 <b>기본 저장소</b>에서 지정하세요.
       </div>
-      {!targetDir && (
-        <>
-          <div style={{ height: 8 }} />
-          <input
-            placeholder="워크스페이스 폴더 이름 (선택 — 비우면 자동)"
-            value={workspaceName}
-            onChange={(e) => setWorkspaceName(e.target.value)}
-          />
-          {workspaceName.trim() && (
-            <div className="muted small" style={{ marginTop: 4 }}>
-              생성 위치: workspaces/{workspaceName.trim().replace(/[^a-zA-Z0-9._-]/g, "-")}
-            </div>
-          )}
-        </>
-      )}
       <div style={{ height: 8 }} />
       <button type="button" onClick={startRun} disabled={!canStart}>
         ▶ 이 내용으로 계획 시작

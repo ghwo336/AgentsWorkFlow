@@ -56,7 +56,7 @@ export default function ProjectWorkspace() {
         <div className="side" style={{ flex: "0 0 300px" }}>
           <TeamRoster />
           <ProjectSettings defaultTargetDir={defaultTargetDir} repos={repos} onSave={saveProjectDir} />
-          <NewTaskForm onStart={start} defaultTargetDir={defaultTargetDir} repos={repos} />
+          <NewTaskForm onStart={start} defaultTargetDir={defaultTargetDir} />
           <RunList runs={runs} selected={selected} onSelect={setSelected} />
         </div>
 

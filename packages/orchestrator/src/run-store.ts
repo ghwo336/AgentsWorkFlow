@@ -37,6 +37,15 @@ export class RunStore {
     return p?.defaultTargetDir?.trim() || null;
   }
 
+  // Remember a project's working folder so later runs reuse it automatically.
+  async setProjectDefaultDir(name: string, dir: string): Promise<void> {
+    await prisma.project.upsert({
+      where: { name },
+      create: { name, defaultTargetDir: dir },
+      update: { defaultTargetDir: dir },
+    });
+  }
+
   savePlan(runId: string, plan: string): Promise<unknown> {
     return prisma.run.update({ where: { id: runId }, data: { plan } });
   }
