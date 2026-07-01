@@ -26,7 +26,9 @@ export const config = {
   root: ROOT,
   host: process.env.ORCH_HOST ?? "127.0.0.1",
   port: Number(process.env.ORCH_PORT ?? 4000),
-  workspacesDir: resolve(ROOT, process.env.WORKSPACES_DIR ?? "./workspaces"),
+  // Kept OUTSIDE the app repo (a sibling under srv) so an agent's workspace has
+  // no parent app-repo to wander into — belt-and-braces with the runtime guard.
+  workspacesDir: resolve(ROOT, process.env.WORKSPACES_DIR ?? "../agent-workspaces"),
   planModel: process.env.PLAN_MODEL ?? "claude-opus-4-8",
   buildModel: process.env.BUILD_MODEL ?? "claude-sonnet-4-6",
   codexModel: resolveCodexModel(),
