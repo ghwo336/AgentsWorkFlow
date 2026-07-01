@@ -21,6 +21,7 @@ async function runClaude(
     cwd?: string;
     permissionMode: "plan" | "bypassPermissions" | "default" | "acceptEdits";
     systemPrompt?: string;
+    disallowedTools?: string[];
   }
 ): Promise<AgentResult> {
   const label = phase === "plan" ? "opus" : "sonnet";
@@ -37,6 +38,7 @@ async function runClaude(
       ...(opts.permissionMode === "bypassPermissions"
         ? { allowDangerouslySkipPermissions: true }
         : {}),
+      ...(opts.disallowedTools ? { disallowedTools: opts.disallowedTools } : {}),
       ...(opts.systemPrompt
         ? { systemPrompt: { type: "preset", preset: "claude_code", append: opts.systemPrompt } }
         : {}),
@@ -135,6 +137,12 @@ Do NOT write code. Output the plan as clear markdown: goal, files to change,
 steps, and risks. Be specific enough that a separate builder agent can execute
 it without further questions.
 
+CRITICAL: The ENTIRE plan MUST be in your final response message, inline. Do NOT
+save the plan to a file, do NOT write it to ~/.claude/plans or anywhere else, and
+do NOT just point to a file. The user reviews your message text directly to
+approve — if the plan isn't in the message, they see nothing. You may READ the
+repository to ground the plan, but never write files.
+
 IMPORTANT: Write the plan prose in Korean (한국어). Keep code, identifiers,
 file paths, and commands in their original form — only the explanations,
 section headings, and descriptions should be Korean.
@@ -182,6 +190,9 @@ export class ClaudePlanner implements Planner {
       cwd: req.cwd,
       permissionMode: "plan",
       systemPrompt: PLAN_SYSTEM,
+      // The plan must land inline in the response, not in a file — block the
+      // write tools so it can't offload the plan to ~/.claude/plans.
+      disallowedTools: ["Write", "Edit", "MultiEdit", "NotebookEdit"],
     });
   }
 }

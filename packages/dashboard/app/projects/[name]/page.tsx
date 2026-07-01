@@ -75,7 +75,11 @@ export default function ProjectWorkspace() {
                   onRevise={(feedback) => revise(feedback)}
                 />
               )}
-              <AgentWorkSummary steps={detail.steps} status={detail.status} />
+              <AgentWorkSummary
+                steps={detail.steps}
+                status={detail.status}
+                plan={detail.plan ?? undefined}
+              />
               <RunViz steps={detail.steps} status={detail.status} />
               <LiveLog events={detail.events} />
             </>

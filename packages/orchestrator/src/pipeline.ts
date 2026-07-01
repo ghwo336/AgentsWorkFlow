@@ -414,13 +414,14 @@ function makeOrder(): () => number {
   return () => n++;
 }
 
+// Store the agent's full summary (markdown structure preserved), not a clipped
+// one-liner — the dashboard truncates for its collapsed preview and renders the
+// full thing as markdown on expand, so "더보기" must have everything to show.
+// Only collapse runs of blank lines and trim.
 function compactAgentSummary(text: string | undefined, fallback: string): string {
-  const normalized = (text ?? "")
+  const cleaned = (text ?? "")
     .replace(/\r/g, "")
-    .split("\n")
-    .map((line) => line.replace(/^[-*#\d.)\s]+/, "").trim())
-    .filter(Boolean)
-    .join(" ");
-  if (!normalized) return fallback;
-  return normalized.length > 220 ? `${normalized.slice(0, 217)}...` : normalized;
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return cleaned || fallback;
 }

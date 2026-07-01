@@ -366,101 +366,199 @@ export function RunDetailCard({ detail }: { detail: RunDetail }) {
   );
 }
 
-// Phase progress bar for one run. Turns the single status badge into an
-// at-a-glance "어디쯤인지" stepper across the fixed pipeline stages.
-// The approval gate is NOT its own node — it lives ON the 기획(호재) node, which
-// blinks while awaiting approval to say "I'm waiting for you here". So the
-// stepper is just the four agent phases.
-const PHASES: { key: string; label: string; agentId: string }[] = [
-  { key: "planning", label: "기획", agentId: "hojae" },
-  { key: "building", label: "빌드", agentId: "taekyung" },
-  { key: "verifying", label: "검증", agentId: "juho" },
-  { key: "committed", label: "완료", agentId: "system" },
-];
+// Run progress, told as the plan itself unfolds: 기획(호재) produces a plan that
+// decomposes into N steps, and each step runs its own 구현→검증→(재시도)→커밋 loop.
+// So instead of a fixed pipeline we render the plan step first, then one row per
+// plan step showing that loop with the agent behind each action.
 
-function kindPhaseIndex(kind: string): number {
+const FLOW_ICON: Record<string, string> = {
+  plan: "📋",
+  build: "🔨",
+  verify: "🔍",
+  review: "🔍",
+  test: "🧪",
+  commit: "✅",
+};
+
+function flowVerb(kind: string): string {
   switch (kind) {
-    case "plan":
-      return 0;
     case "build":
-      return 1;
+      return "구현";
     case "verify":
     case "review":
+      return "검증";
     case "test":
-      return 2;
+      return "테스트";
     case "commit":
-      return 3;
+      return "커밋";
+    case "plan":
+      return "기획";
     default:
-      return 0;
+      return kind;
   }
 }
 
-// Best-effort mapping of a run to a phase index + its state. Happy-path statuses
-// map directly; awaiting_approval sits on the 기획 node (blinking); terminal
-// errors infer the furthest phase reached from the steps.
-function runProgress(detail: RunDetail): {
-  reached: number;
-  failed: boolean;
-  done: boolean;
-  awaiting: boolean;
-} {
-  const status = detail.status;
-  if (status === "committed") return { reached: 3, failed: false, done: true, awaiting: false };
-  if (status === "awaiting_approval")
-    return { reached: 0, failed: false, done: false, awaiting: true };
-  const idx = PHASES.findIndex((p) => p.key === status);
-  if (idx >= 0) return { reached: idx, failed: false, done: false, awaiting: false };
+// Which plan step (1-based) a work-span belongs to. build/commit carry it in
+// their label ("단계 N/M"); a verify/review/test span inherits it from its parent
+// build via parentId.
+function planStepNo(step: Step, byId: Map<string, Step>): number | null {
+  const direct = step.label.match(/단계\s*(\d+)\s*\//);
+  if (direct) return Number(direct[1]);
+  let cur: Step | undefined = step;
+  const seen = new Set<string>();
+  while (cur?.parentId && !seen.has(cur.parentId)) {
+    seen.add(cur.parentId);
+    cur = byId.get(cur.parentId);
+    const m = cur?.label.match(/단계\s*(\d+)\s*\//);
+    if (m) return Number(m[1]);
+  }
+  return null;
+}
 
-  // rejected / failed / cancelled → how far did it get?
-  let reached = 0;
-  for (const s of detail.steps) reached = Math.max(reached, kindPhaseIndex(s.kind));
-  return { reached, failed: true, done: false, awaiting: false };
+function planStepTotal(steps: Step[]): number {
+  for (const s of steps) {
+    const m = s.label.match(/단계\s*\d+\s*\/\s*(\d+)/);
+    if (m) return Number(m[1]);
+  }
+  return 0;
+}
+
+type StepGroup = { no: number; steps: Step[] };
+
+function groupByPlanStep(steps: Step[]): StepGroup[] {
+  const byId = new Map(steps.map((s) => [s.id, s]));
+  const map = new Map<number, Step[]>();
+  for (const s of steps) {
+    if (s.kind === "plan") continue;
+    const no = planStepNo(s, byId);
+    if (no == null) continue;
+    (map.get(no) ?? map.set(no, []).get(no)!).push(s);
+  }
+  return [...map.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([no, list]) => ({ no, steps: list.sort((a, b) => a.orderIdx - b.orderIdx) }));
+}
+
+function toneFor(status: string): "passed" | "failed" | "running" | "pending" {
+  if (status === "passed") return "passed";
+  if (status === "failed") return "failed";
+  if (status === "running") return "running";
+  return "pending";
+}
+
+// One action in a plan step's loop: the icon, who did it, retry number, and a
+// pass/fail/running mark.
+function FlowPill({ step }: { step: Step }) {
+  const agent = agentForStep(step);
+  const tone = toneFor(step.status);
+  const mark =
+    step.status === "passed"
+      ? "✓"
+      : step.status === "failed"
+        ? "✕"
+        : step.status === "running"
+          ? "…"
+          : "•";
+  return (
+    <span className={`flow-pill flow-${tone}`} title={step.summary ?? step.label}>
+      <span className="flow-ico">{FLOW_ICON[step.kind] ?? "•"}</span>
+      <span className={step.status === "running" ? "blink" : undefined} style={{ display: "inline-flex" }}>
+        <PixelAvatar agent={agent} size={18} />
+      </span>
+      <span className="flow-verb">
+        {flowVerb(step.kind)}
+        {step.attempt > 1 ? ` ${step.attempt}차` : ""} · {agent.name}
+      </span>
+      <span className="flow-mark">{mark}</span>
+    </span>
+  );
+}
+
+// One plan step: header (단계 N/M + 상태) and the horizontal 구현→검증→…→커밋 flow.
+function StepGroupRow({ group, total }: { group: StepGroup; total: number }) {
+  const committed = group.steps.some((s) => s.kind === "commit" && s.status === "passed");
+  const running = group.steps.some((s) => s.status === "running");
+  const badge = committed
+    ? { icon: "✅", label: "완료", tone: "passed" }
+    : running
+      ? { icon: "⏳", label: "진행 중", tone: "running" }
+      : { icon: "•", label: "대기", tone: "pending" };
+
+  return (
+    <div className="flow-group">
+      <div className="flow-group-head">
+        <b>단계 {group.no}{total ? `/${total}` : ""}</b>
+        <span className={`badge step-${badge.tone}`}>
+          {badge.icon} {badge.label}
+        </span>
+      </div>
+      <div className="flow-line">
+        {group.steps.map((s, i) => (
+          <span key={s.id} className="flow-item">
+            {i > 0 && <span className="flow-arrow">→</span>}
+            <FlowPill step={s} />
+          </span>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export function RunProgress({ detail }: { detail: RunDetail }) {
-  const { reached, failed, done, awaiting } = runProgress(detail);
+  const planStep = detail.steps.find((s) => s.kind === "plan") ?? null;
+  const groups = groupByPlanStep(detail.steps);
+  const total = planStepTotal(detail.steps);
+  const awaiting = detail.status === "awaiting_approval";
+  const planDone = !!planStep && planStep.status === "passed";
+  const hojae = agentById("hojae");
+
+  const planBadge = awaiting
+    ? { icon: "⏳", label: "승인 대기", tone: "running" }
+    : planDone
+      ? { icon: "✅", label: "완료", tone: "passed" }
+      : planStep?.status === "failed"
+        ? { icon: "✕", label: "실패", tone: "failed" }
+        : { icon: "⏳", label: "진행 중", tone: "running" };
 
   return (
     <div className="panel">
       <b>진행도</b>
-      <div className="stepper" style={{ marginTop: 10 }}>
-        {PHASES.map((p, i) => {
-          let state: "done" | "current" | "pending" | "failed" | "waiting";
-          if (done) state = "done";
-          else if (awaiting) state = i === 0 ? "waiting" : "pending";
-          else if (failed) state = i < reached ? "done" : i === reached ? "failed" : "pending";
-          else state = i < reached ? "done" : i === reached ? "current" : "pending";
 
-          const agent = agentById(p.agentId);
-          const animate = state === "current" ? "bob" : state === "waiting" ? "blink" : undefined;
-          return (
-            <div key={p.key} className={`step-node s-${state}`}>
-              <div className="step-dot">
-                {agent ? (
-                  <span className={animate}>
-                    <PixelAvatar agent={agent} size={30} />
-                  </span>
-                ) : state === "done" ? (
-                  "✓"
-                ) : state === "failed" ? (
-                  "✕"
-                ) : (
-                  "•"
-                )}
-              </div>
-              <div className="step-label">
-                {state === "waiting" ? "승인 대기" : p.label}
-              </div>
-              {agent && <div className="step-who">{agent.name}</div>}
-              {i < PHASES.length - 1 && <div className="step-bar" />}
-            </div>
-          );
-        })}
+      {/* 기획 — the plan gate lives here; 호재 blinks while awaiting approval. */}
+      <div className="flow-group" style={{ marginTop: 10 }}>
+        <div className="flow-group-head">
+          <b>기획</b>
+          <span className={`badge step-${planBadge.tone}`}>
+            {planBadge.icon} {planBadge.label}
+          </span>
+        </div>
+        <div className="flow-line">
+          <span
+            className={`flow-pill flow-${awaiting ? "running" : planDone ? "passed" : planStep?.status === "failed" ? "failed" : "pending"}`}
+          >
+            <span className="flow-ico">📋</span>
+            <span className={awaiting ? "blink" : undefined} style={{ display: "inline-flex" }}>
+              <PixelAvatar agent={hojae} size={18} />
+            </span>
+            <span className="flow-verb">기획 · {hojae.name}</span>
+          </span>
+        </div>
       </div>
+
       {awaiting && (
-        <div className="muted small" style={{ marginTop: 12, textAlign: "center" }}>
+        <div className="muted small" style={{ margin: "10px 0 2px", textAlign: "center" }}>
           호재가 계획을 마치고{" "}
           <b style={{ color: "var(--yellow)" }}>승인을 기다리고 있어요</b> — 위에서 승인하거나 거절하세요.
+        </div>
+      )}
+
+      {groups.map((g) => (
+        <StepGroupRow key={g.no} group={g} total={total} />
+      ))}
+
+      {groups.length === 0 && planDone && !awaiting && (
+        <div className="muted small" style={{ marginTop: 10 }}>
+          승인 후 단계별 구현이 시작됩니다.
         </div>
       )}
     </div>
@@ -469,7 +567,15 @@ export function RunProgress({ detail }: { detail: RunDetail }) {
 
 type SummaryFilter = "all" | "done" | "error";
 
-export function AgentWorkSummary({ steps, status }: { steps: Step[]; status?: string }) {
+export function AgentWorkSummary({
+  steps,
+  status,
+  plan,
+}: {
+  steps: Step[];
+  status?: string;
+  plan?: string;
+}) {
   const [filter, setFilter] = useState<SummaryFilter>("all");
   const awaitingApproval = status === "awaiting_approval";
   const visible = steps.filter((step) => step.kind !== "commit" || step.summary);
@@ -515,6 +621,9 @@ export function AgentWorkSummary({ steps, status }: { steps: Step[]; status?: st
               key={step.id}
               step={step}
               awaitingApproval={awaitingApproval && step.kind === "plan"}
+              // The plan step's stored summary is compacted; show the full plan
+              // (markdown) when expanded so 더보기 actually reveals everything.
+              fullText={step.kind === "plan" ? plan : undefined}
             />
           ))}
         </div>
@@ -560,14 +669,26 @@ function stepOutcome(step: Step, awaitingApproval = false): Outcome {
 
 // One work-summary card: who did it, the outcome verdict, and the summary body
 // (codex review reason / build "무엇을 했는지"), clamped with a 더보기 toggle.
-function SummaryItem({ step, awaitingApproval = false }: { step: Step; awaitingApproval?: boolean }) {
+function SummaryItem({
+  step,
+  awaitingApproval = false,
+  fullText,
+}: {
+  step: Step;
+  awaitingApproval?: boolean;
+  fullText?: string;
+}) {
   const agent = agentForStep(step);
   const outcome = stepOutcome(step, awaitingApproval);
   const [expanded, setExpanded] = useState(false);
+  // Prefer the full text (e.g. the whole plan) over the compacted summary, so
+  // expanding really shows everything.
   const body =
-    step.summary?.trim() || (step.status === "running" ? "진행 중입니다." : "요약이 없습니다.");
+    fullText?.trim() ||
+    step.summary?.trim() ||
+    (step.status === "running" ? "진행 중입니다." : "요약이 없습니다.");
   const long = body.length > 180;
-  const shownBody = long && !expanded ? `${body.slice(0, 180).trimEnd()}…` : body;
+  const collapsed = long && !expanded ? `${body.slice(0, 180).trimEnd()}…` : body;
   const bodyLabel =
     step.kind === "build" ? "구현 내용" : step.kind === "plan" ? "계획 요약" : "리뷰 결과";
 
@@ -591,7 +712,9 @@ function SummaryItem({ step, awaitingApproval = false }: { step: Step; awaitingA
       </div>
       <div className="agent-summary-body">
         <span className="muted small">{bodyLabel} · </span>
-        {shownBody}
+        {/* Collapsed → plain truncated text (never cut markdown mid-syntax);
+            expanded → full text rendered as markdown. */}
+        {expanded ? <Markdown>{body}</Markdown> : collapsed}
       </div>
       {long && (
         <button
@@ -622,22 +745,41 @@ export function ApprovalPanel({
 }) {
   const [editedPlan, setEditedPlan] = useState(plan);
   const [feedback, setFeedback] = useState("");
+  const [editing, setEditing] = useState(false); // preview (rendered) by default
   useEffect(() => {
     setEditedPlan(plan);
     setFeedback(""); // a fresh plan arrived → clear the previous feedback
+    setEditing(false);
   }, [plan]);
 
   return (
     <div className="panel" style={{ borderColor: "var(--accent)" }}>
-      <b>★ 계획 — 승인 / 수정</b>
+      <div className="row spread">
+        <b>★ 계획 — 승인 / 수정</b>
+        <button
+          className="ghost small"
+          style={{ boxShadow: "none", padding: "2px 8px" }}
+          onClick={() => setEditing((v) => !v)}
+        >
+          {editing ? "👁 미리보기" : "✏️ 편집"}
+        </button>
+      </div>
       <div style={{ height: 8 }} />
-      <textarea rows={14} value={editedPlan} onChange={(e) => setEditedPlan(e.target.value)} />
+      {editing ? (
+        <textarea rows={14} value={editedPlan} onChange={(e) => setEditedPlan(e.target.value)} />
+      ) : (
+        <div className="plan-preview">
+          <Markdown>{editedPlan}</Markdown>
+        </div>
+      )}
       <div className="row" style={{ marginTop: 10, gap: 8 }}>
         <button onClick={() => onApprove(editedPlan)}>✅ 승인 → 구현</button>
         <button className="danger" onClick={onReject}>
           ✖ 거절
         </button>
-        <span className="muted small">편집 후 승인하면 수정된 계획으로 진행됩니다.</span>
+        <span className="muted small">
+          {editing ? "편집 후 승인하면 수정된 계획으로 진행됩니다." : "✏️ 편집으로 직접 고칠 수 있어요."}
+        </span>
       </div>
 
       <div
