@@ -1,9 +1,24 @@
-import { prisma } from "@agent-loop/shared/db";
 import { notFound } from "next/navigation";
+import { ORCH_URL } from "../../lib/orch";
 import { DiffView } from "./DiffView";
 import { agentById, agentForEvent, PixelAvatar, ROLE_COLOR } from "../../lib/agents";
 
 export const dynamic = "force-dynamic";
+
+type RunEventRow = { id: string; phase: string; level: string; message: string; ts: string; model?: string | null };
+type VerdictRow = { id: string; attempt: number; passed: boolean; ts: string; reason: string; diff?: string | null };
+type RunRow = {
+  id: string;
+  title: string;
+  status: string;
+  brief: string;
+  targetDir?: string | null;
+  commit?: string | null;
+  error?: string | null;
+  plan?: string | null;
+  events: RunEventRow[];
+  verdicts: VerdictRow[];
+};
 
 export default async function RunDetail({
   params,
@@ -11,14 +26,11 @@ export default async function RunDetail({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const run = await prisma.run.findUnique({
-    where: { id },
-    include: {
-      events: { orderBy: { ts: "asc" } },
-      verdicts: { orderBy: { ts: "asc" } },
-    },
-  });
-  if (!run) notFound();
+  // Fetched from the orchestrator (DB owner) rather than opening SQLite here.
+  const res = await fetch(`${ORCH_URL}/data/runs/${encodeURIComponent(id)}`, { cache: "no-store" });
+  if (res.status === 404) notFound();
+  if (!res.ok) throw new Error(`run detail → HTTP ${res.status}`);
+  const run: RunRow = await res.json();
 
   return (
     <div className="wrap">

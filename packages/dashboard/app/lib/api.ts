@@ -76,4 +76,15 @@ export const api = {
       { action: "revise", feedback },
       "수정 요청 실패"
     ),
+
+  // Resolve a run stuck at needs_input: guide (fix instructions) / commit (accept
+  // as-is) / skip (drop this step) / abort (stop the run).
+  resume: (
+    id: string,
+    decision:
+      | { action: "guide"; feedback: string }
+      | { action: "commit" }
+      | { action: "skip" }
+      | { action: "abort" }
+  ) => postJson<unknown>(`/api/orchestrator/runs/${id}/resume`, decision, "재개 요청 실패"),
 };

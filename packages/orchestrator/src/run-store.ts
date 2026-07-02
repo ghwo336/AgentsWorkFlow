@@ -100,4 +100,23 @@ export class RunStore {
     });
     return s?.orderIdx ?? -1;
   }
+
+  // Where to resume the build from: how many plan steps are already resolved
+  // (each has a commit step marked passed OR skipped) and the id of the last such
+  // step (the chain parent for the next one). Derived from the DB so it survives
+  // an orchestrator restart and a user-intervention park/resume. `committedCount`
+  // doubles as the 0-based index of the next (or stuck) step.
+  async getResumePoint(runId: string): Promise<{
+    committedCount: number;
+    lastCommitStepId: string | null;
+  }> {
+    const resolved = await prisma.step.findMany({
+      where: { runId, kind: "commit", status: { in: ["passed", "skipped"] } },
+      orderBy: { orderIdx: "asc" },
+    });
+    return {
+      committedCount: resolved.length,
+      lastCommitStepId: resolved[resolved.length - 1]?.id ?? null,
+    };
+  }
 }

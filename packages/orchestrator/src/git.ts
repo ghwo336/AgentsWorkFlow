@@ -56,6 +56,23 @@ export async function commitAll(cwd: string, message: string): Promise<string> {
   return sha;
 }
 
+// Throw away all uncommitted work (revert tracked files to HEAD, delete
+// untracked). Used when the user chooses to SKIP a stuck step so its failed
+// attempt doesn't leak into the next step's diff. Tolerant of a repo with no
+// commits yet (fresh workspace on step 1): reset --hard is a no-op there, clean
+// still removes the scaffolded files.
+export async function discardChanges(cwd: string): Promise<void> {
+  await runGit(cwd, ["reset", "--hard"]).catch(() => {});
+  await runGit(cwd, ["clean", "-fd"]).catch(() => {});
+}
+
+// Current commit sha, or "" if the repo has no commits yet.
+export async function headSha(cwd: string): Promise<string> {
+  return runGit(cwd, ["rev-parse", "HEAD"])
+    .then((s) => s.trim())
+    .catch(() => "");
+}
+
 // Abstraction the pipeline depends on, so the VCS implementation can be swapped
 // (or stubbed in tests) without touching the orchestration logic (DIP).
 export interface GitOps {
@@ -63,6 +80,15 @@ export interface GitOps {
   uncommittedDiff(cwd: string): Promise<string>;
   hasChanges(cwd: string): Promise<boolean>;
   commitAll(cwd: string, message: string): Promise<string>;
+  discardChanges(cwd: string): Promise<void>;
+  headSha(cwd: string): Promise<string>;
 }
 
-export const git: GitOps = { ensureRepo, uncommittedDiff, hasChanges, commitAll };
+export const git: GitOps = {
+  ensureRepo,
+  uncommittedDiff,
+  hasChanges,
+  commitAll,
+  discardChanges,
+  headSha,
+};

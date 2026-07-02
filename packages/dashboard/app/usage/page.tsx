@@ -1,5 +1,17 @@
-import { prisma } from "@agent-loop/shared/db";
+import { orchJson } from "../lib/orch";
 import { isPriced } from "@agent-loop/shared/pricing";
+
+type UsageRow = {
+  engine: string;
+  model: string;
+  phase: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheRead: number;
+  cacheWrite: number;
+  costUsd: number;
+  run: { project: string };
+};
 
 export const dynamic = "force-dynamic";
 
@@ -46,10 +58,7 @@ export default async function UsagePage({
 }) {
   const { project } = await searchParams;
 
-  const usages = await prisma.usage.findMany({
-    include: { run: { select: { project: true } } },
-    orderBy: { ts: "desc" },
-  });
+  const usages = await orchJson<UsageRow[]>("/data/usage");
 
   const allRows: Row[] = usages.map((u) => ({
     engine: u.engine,

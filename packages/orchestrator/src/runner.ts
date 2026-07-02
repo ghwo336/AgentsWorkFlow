@@ -142,3 +142,21 @@ export async function resolveApproval(
   pipeline.build(runId, reporter).catch(onFatal(reporter));
   return true;
 }
+
+// User intervention on a run parked at needs_input (a step stuck after retries +
+// 호재 escalation). Mirrors resolveApproval's DB-first, restart-safe contract:
+// returns false (→ 409) unless the run is actually awaiting input. Fire-and-
+// forget resumes the build per the decision.
+export type InputDecision =
+  | { action: "guide"; feedback: string }
+  | { action: "commit" }
+  | { action: "skip" }
+  | { action: "abort" };
+
+export async function resolveInput(runId: string, decision: InputDecision): Promise<boolean> {
+  const st = await store.getResumeState(runId);
+  if (!st || st.status !== "needs_input") return false;
+  const reporter = new DbRunReporter(runId);
+  pipeline.resumeFromInput(runId, reporter, decision).catch(onFatal(reporter));
+  return true;
+}

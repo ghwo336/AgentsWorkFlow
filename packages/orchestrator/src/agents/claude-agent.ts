@@ -5,6 +5,7 @@ import type {
   AgentResult,
   BuildRequest,
   Builder,
+  InterveneRequest,
   PlanRequest,
   Planner,
 } from "./types.js";
@@ -51,7 +52,12 @@ function workspaceGuard(targetDir: string): CanUseTool {
         }
       }
     }
-    return { behavior: "allow" };
+    // MUST echo the (unchanged) input back as updatedInput. The SDK's permission
+    // control-protocol validates the allow response and REJECTS a missing
+    // updatedInput with "expected record, received undefined" — which surfaces to
+    // the agent as "ZodError: Tool permission request failed" and blocks EVERY
+    // Write/Edit/Bash, so nothing ever gets built.
+    return { behavior: "allow", updatedInput: input };
   };
 }
 
@@ -233,9 +239,53 @@ When done, write a concise Korean summary covering:
   2) 이전 검증에서 거절된 적이 있다면(피드백이 주어졌다면), 그 지적을 어떻게
      해결했는지 구체적으로. (피드백이 없었다면 이 항목은 생략.)`;
 
+const INTERVENE_SYSTEM = `You are the LEAD engineer (호재) in an automated dev loop.
+A single build step has FAILED code review repeatedly. The builders keep trying
+but can't get it past the reviewer. Step in as the lead: figure out the REAL
+root cause and hand the builder a concrete, decisive fix.
+
+You are READ-ONLY: inspect the repo/diff to ground your diagnosis, but do NOT
+edit files. Your output is GUIDANCE the builder will follow on the next attempt.
+
+Think about WHY the previous attempts failed (look past the surface symptom):
+  - Is the builder chasing the wrong fix, or fabricating package versions?
+  - Is there a dependency/peer-dependency or version conflict to pin exactly?
+  - Is the reviewer's objection legitimate, and if so what is the minimal correct fix?
+  - Are the attempts oscillating between two wrong states?
+
+Respond in KOREAN with a short, decisive action plan the builder can execute:
+  1) 근본 원인 (한두 문장).
+  2) 정확히 무엇을 어떻게 바꿔야 하는지 — 구체적 파일/패키지/버전/명령까지. 애매한
+     표현 금지. 필요하면 정확한 버전 번호를 명시(존재하지 않는 버전 지어내지 말 것).
+  3) 하지 말아야 할 것 (반복된 실패 패턴을 다시 밟지 않도록).
+Keep code, identifiers, paths, versions, and commands in their original form.`;
+
 // Claude planning agent (Opus): produces the approval-gated plan.
 export class ClaudePlanner implements Planner {
   constructor(private readonly model: string) {}
+
+  // Lead-engineer escalation: diagnose a repeatedly-failing step (read-only) and
+  // return concrete fix guidance for the builder's next round.
+  intervene(req: InterveneRequest, reporter: PhaseReporter): Promise<AgentResult> {
+    const failures = req.failures.length
+      ? req.failures.map((f, i) => `## 실패 ${i + 1}\n${f}`).join("\n\n")
+      : "(기록된 리뷰 사유 없음)";
+    const prompt = [
+      workspaceRule(req.cwd),
+      `# 전체 승인 계획\n${req.approvedPlan}`,
+      `# 막힌 단계 (${req.index}/${req.total})\n${req.stepDescription}`,
+      `# 지금까지 ${req.attempts}번 시도했지만 모두 검증 실패 — 검증자(codex) 사유\n${failures}`,
+      `# 현재(거절된) 변경 diff\n\`\`\`diff\n${(req.diff || "(no changes)").slice(0, 20000)}\n\`\`\``,
+      `위 실패들을 근거로 근본 원인을 진단하고, 빌더가 다음 시도에서 바로 실행할 수 있는 구체적 해결책을 제시하세요.`,
+    ].join("\n\n");
+    return runClaude(reporter, "plan", this.model, prompt, {
+      cwd: req.cwd,
+      permissionMode: "plan",
+      systemPrompt: INTERVENE_SYSTEM,
+      canUseTool: workspaceGuard(req.cwd),
+      disallowedTools: ["Write", "Edit", "MultiEdit", "NotebookEdit", "Task"],
+    });
+  }
 
   plan(req: PlanRequest, reporter: PhaseReporter): Promise<AgentResult> {
     const body =

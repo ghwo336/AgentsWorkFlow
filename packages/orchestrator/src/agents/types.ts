@@ -37,6 +37,20 @@ export interface VerifyRequest {
   diff: string;
 }
 
+// Escalation: when a step keeps failing verification, the lead (호재/Opus) is
+// asked to diagnose the root cause from the accumulated reviewer feedback + the
+// current diff, and hand the builder concrete fix guidance for the next round.
+export interface InterveneRequest {
+  cwd: string;
+  approvedPlan: string;
+  stepDescription: string;
+  index: number; // 1-based
+  total: number;
+  attempts: number; // how many build/verify attempts already failed
+  failures: string[]; // each failing reviewer reason across the round
+  diff: string; // the current (rejected) uncommitted diff
+}
+
 export interface CodexUsage {
   inputTokens: number; // uncached input
   outputTokens: number;
@@ -56,6 +70,9 @@ export interface VerifyResult {
 // orchestration logic (DIP/OCP).
 export interface Planner {
   plan(req: PlanRequest, reporter: PhaseReporter): Promise<AgentResult>;
+  // Diagnose a repeatedly-failing step and return actionable fix guidance for
+  // the builder (read-only; does not touch files).
+  intervene(req: InterveneRequest, reporter: PhaseReporter): Promise<AgentResult>;
 }
 
 export interface Builder {

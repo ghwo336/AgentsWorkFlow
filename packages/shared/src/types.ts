@@ -5,6 +5,7 @@ export type RunStatus =
   | "awaiting_approval"
   | "building"
   | "verifying"
+  | "needs_input" // a step exhausted retries + 호재 escalation → waiting for the user
   | "committed"
   | "rejected"
   | "failed"

@@ -4,6 +4,7 @@ import { useParams } from "next/navigation";
 import {
   AgentWorkSummary,
   ApprovalPanel,
+  InterventionPanel,
   LiveLog,
   NewTaskForm,
   ProjectSettings,
@@ -28,6 +29,7 @@ export default function ProjectWorkspace() {
     start,
     decide,
     revise,
+    intervene,
     defaultTargetDir,
     saveProjectDir,
     repos,
@@ -84,6 +86,15 @@ export default function ProjectWorkspace() {
                   onApprove={(editedPlan) => decide(true, editedPlan)}
                   onReject={() => decide(false)}
                   onRevise={(feedback) => revise(feedback)}
+                />
+              )}
+              {detail.status === "needs_input" && (
+                <InterventionPanel
+                  reason={detail.error}
+                  onGuide={(feedback) => intervene({ action: "guide", feedback })}
+                  onCommit={() => intervene({ action: "commit" })}
+                  onSkip={() => intervene({ action: "skip" })}
+                  onAbort={() => intervene({ action: "abort" })}
                 />
               )}
               <AgentWorkSummary

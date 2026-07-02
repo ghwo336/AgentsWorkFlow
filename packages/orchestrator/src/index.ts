@@ -5,12 +5,17 @@ import { prisma } from "@agent-loop/shared/db";
 import { bus } from "./bus.js";
 import { clarify } from "./chat.js";
 import { config } from "./config.js";
-import { resolveApproval, startRun } from "./runner.js";
+import { registerDataRoutes } from "./http-data.js";
+import { resolveApproval, resolveInput, startRun } from "./runner.js";
 
 const app = Fastify({ logger: false });
 await app.register(cors, { origin: true });
 
 app.get("/health", async () => ({ ok: true }));
+
+// DB read/write API for the dashboard (see http-data.ts — avoids the container
+// touching the SQLite file over a bind mount).
+registerDataRoutes(app);
 
 // Start a new run.
 const StartSchema = z.object({
@@ -44,6 +49,27 @@ app.post("/runs/:id/approve", async (req, reply) => {
   const ok = await resolveApproval(id, parsed.data);
   if (!ok) {
     return reply.code(409).send({ error: "No run awaiting approval with that id." });
+  }
+  return { ok: true };
+});
+
+// Resolve a run parked at needs_input (a step stuck after retries + 호재 escalation):
+// guide (send fix instructions), commit (accept as-is), skip, or abort.
+const InputSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("guide"), feedback: z.string().min(1) }),
+  z.object({ action: z.literal("commit") }),
+  z.object({ action: z.literal("skip") }),
+  z.object({ action: z.literal("abort") }),
+]);
+app.post("/runs/:id/resume", async (req, reply) => {
+  const { id } = req.params as { id: string };
+  const parsed = InputSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return reply.code(400).send({ error: parsed.error.flatten() });
+  }
+  const ok = await resolveInput(id, parsed.data);
+  if (!ok) {
+    return reply.code(409).send({ error: "No run awaiting input with that id." });
   }
   return { ok: true };
 });

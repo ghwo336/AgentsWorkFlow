@@ -1,4 +1,9 @@
-"use client";
+// NOTE: intentionally NOT "use client". Everything here is pure (SVG render
+// helpers + deterministic data/lookups, no hooks/events/browser APIs), so this
+// is a SHARED module usable from both server and client components. Marking it
+// "use client" made server components (e.g. /runs/[id]) crash when they call
+// agentById()/agentForEvent() — you can't invoke a client-module function from
+// the server, only render its components.
 
 // ── The cast ────────────────────────────────────────────────────────────────
 // Each pipeline role is played by a named pixel character. Two developers and

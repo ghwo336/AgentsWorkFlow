@@ -23,6 +23,9 @@ export type Run = {
   brief: string;
   status: string;
   plan?: string | null;
+  // JSON-encoded string[] of the decomposed plan-step descriptions (what each
+  // 단계 N actually does), persisted when the plan is approved.
+  planSteps?: string | null;
   commit?: string | null;
   error?: string | null;
   targetDir?: string | null;

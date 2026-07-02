@@ -83,6 +83,7 @@ a:hover { text-decoration: underline; }
 .b-rejected, .b-failed { color: var(--red); border-color: var(--red); }
 .b-building, .b-verifying, .b-planning { color: var(--yellow); border-color: var(--yellow); }
 .b-awaiting_approval { color: var(--accent); border-color: var(--accent); }
+.b-needs_input { color: var(--yellow); border-color: var(--yellow); background: rgba(255, 200, 97, .12); }
 
 button {
   background: var(--accent); color: #0b1020; border: 2px solid rgba(0, 0, 0, 0.35);
@@ -258,6 +259,26 @@ td, th { text-align: left; padding: 8px; border-bottom: 1px solid var(--border);
   50% { opacity: .55; }
 }
 
+/* "기획하는 중" live indicator: a soft pulsing row + a three-dot loader so the
+   long, silent plan phase never reads as frozen. */
+.planning-live {
+  display: inline-flex; align-items: center; gap: 6px;
+  animation: avatar-focus 1.4s ease-in-out infinite;
+}
+.planning-dots {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--yellow);
+  box-shadow: 10px 0 0 var(--yellow), 20px 0 0 var(--yellow);
+  margin-right: 22px;
+  animation: planning-dots 1s steps(1, end) infinite;
+}
+@keyframes planning-dots {
+  0%   { box-shadow: 10px 0 0 rgba(255,209,102,.25), 20px 0 0 rgba(255,209,102,.25); opacity: 1; }
+  33%  { box-shadow: 10px 0 0 var(--yellow), 20px 0 0 rgba(255,209,102,.25); }
+  66%  { box-shadow: 10px 0 0 var(--yellow), 20px 0 0 var(--yellow); }
+  100% { box-shadow: 10px 0 0 rgba(255,209,102,.25), 20px 0 0 rgba(255,209,102,.25); }
+}
+
 /* Office scene: back wall (window/clock/plant) over a wood floor with desks. */
 .office { position: relative; overflow: hidden; }
 .office-wall {
@@ -393,6 +414,36 @@ td, th { text-align: left; padding: 8px; border-bottom: 1px solid var(--border);
 .flow-running { border-color: var(--yellow); background: rgba(255, 200, 97, .1); }
 .flow-running .flow-mark { color: var(--yellow); }
 .flow-pending { opacity: .7; }
+
+/* 단계별 작업 표 — the plan roadmap as a grid table (# / 작업 내용 / 담당 / 상태). */
+.plan-table { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--panel-2); }
+.plan-table-caption {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--panel);
+}
+.plan-thead, .plan-trow {
+  display: grid;
+  grid-template-columns: 28px 1fr 82px 96px;
+  gap: 8px; align-items: start;
+  padding: 8px 12px;
+}
+.plan-thead {
+  font-size: 11px; letter-spacing: .02em; text-transform: uppercase;
+  color: var(--muted); border-bottom: 1px solid var(--border); background: var(--panel);
+}
+.plan-trow { border-top: 1px solid var(--border); font-size: 12.5px; }
+.plan-trow:first-of-type { border-top: none; }
+.plan-no { font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
+.plan-desc { line-height: 1.45; word-break: break-word; }
+.plan-who { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; white-space: nowrap; }
+.plan-status { justify-self: end; }
+.plan-status .badge { white-space: nowrap; }
+.plan-subflow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 8px; }
+/* row tints by state so the eye lands on what's live */
+.plan-trow.plan-running { background: rgba(255, 200, 97, .09); }
+.plan-trow.plan-passed { background: rgba(87, 217, 154, .06); }
+.plan-trow.plan-failed { background: rgba(255, 107, 125, .08); }
+.plan-trow.plan-pending { opacity: .72; }
 
 @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
 .blink { animation: blink 1s ease-in-out infinite; display: inline-flex; }

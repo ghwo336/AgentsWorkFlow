@@ -156,6 +156,27 @@ export function useWorkspace(project: string) {
     [detail, loadDetail, fail]
   );
 
+  // Resolve a run stuck at needs_input (guide/commit/skip/abort).
+  const intervene = useCallback(
+    async (
+      decision:
+        | { action: "guide"; feedback: string }
+        | { action: "commit" }
+        | { action: "skip" }
+        | { action: "abort" }
+    ) => {
+      if (!detail) return;
+      try {
+        await api.resume(detail.id, decision);
+        setError(null);
+        loadDetail(detail.id);
+      } catch (err) {
+        fail(err, "재개 요청 실패", true);
+      }
+    },
+    [detail, loadDetail, fail]
+  );
+
   return {
     runs,
     selected,
@@ -165,6 +186,7 @@ export function useWorkspace(project: string) {
     start,
     decide,
     revise,
+    intervene,
     defaultTargetDir,
     saveProjectDir,
     repos,

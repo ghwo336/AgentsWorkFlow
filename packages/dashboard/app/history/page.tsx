@@ -1,13 +1,19 @@
-import { prisma } from "@agent-loop/shared/db";
+import { orchJson } from "../lib/orch";
 
 export const dynamic = "force-dynamic";
 
+type HistoryRow = {
+  id: string;
+  title: string;
+  project: string;
+  status: string;
+  commit?: string | null;
+  createdAt: string;
+  _count: { verdicts: number };
+};
+
 export default async function HistoryPage() {
-  const runs = await prisma.run.findMany({
-    orderBy: { createdAt: "desc" },
-    take: 200,
-    include: { _count: { select: { verdicts: true } } },
-  });
+  const runs = await orchJson<HistoryRow[]>("/data/history");
 
   return (
     <div className="wrap">

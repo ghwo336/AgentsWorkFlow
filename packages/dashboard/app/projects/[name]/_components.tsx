@@ -120,10 +120,22 @@ export function NewTaskForm({
   }
 
   async function startRun() {
-    if (!title.trim() || messages.length === 0) return;
+    // The chat is optional refinement — you can also just type the requirements
+    // and hit start. So fold any un-sent input into the brief instead of forcing
+    // a send() round-trip first.
+    const pending = input.trim();
+    const thread: ChatMessage[] = pending
+      ? [...messages, { role: "user", content: pending }]
+      : messages;
+    if (thread.length === 0 || sending) return;
+    const brief = briefFromChat(thread);
+    // Title is optional: derive one from the first request line when left blank.
+    const firstAsk = thread.find((m) => m.role === "user")?.content ?? "";
+    const derivedTitle =
+      title.trim() || firstAsk.split("\n")[0].trim().slice(0, 60) || "새 작업";
     // No path input: the orchestrator runs this in the project's own folder
     // (agent-workspaces/<project>), creating/reusing it automatically.
-    const ok = await onStart({ title: title.trim(), brief: briefFromChat(messages) });
+    const ok = await onStart({ title: derivedTitle, brief });
     if (ok) {
       setTitle("");
       setMessages([]);
@@ -134,7 +146,9 @@ export function NewTaskForm({
 
   const folderName = defaultTargetDir ? defaultTargetDir.replace(/\/+$/, "").split("/").pop() : "";
   const hasChat = messages.some((m) => m.role === "user");
-  const canStart = !!title.trim() && hasChat && !sending;
+  // Startable as soon as there's *any* requirement text — either a sent chat
+  // turn or something typed in the box. Title is auto-derived when empty.
+  const canStart = (hasChat || !!input.trim()) && !sending;
 
   return (
     <div className="panel">
@@ -142,7 +156,7 @@ export function NewTaskForm({
       <div className="muted small" style={{ marginTop: 4, marginBottom: 8 }}>
         Opus와 대화하며 요구사항을 정리한 뒤 계획을 시작하세요.
       </div>
-      <input placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
+      <input placeholder="제목 (비워두면 자동 생성)" value={title} onChange={(e) => setTitle(e.target.value)} />
 
       <div className="chat-thread" ref={threadRef} style={{ marginTop: 8 }}>
         {messages.length === 0 && !sending && (
@@ -212,11 +226,7 @@ export function NewTaskForm({
       </button>
       {!canStart && (
         <div className="muted small" style={{ marginTop: 6 }}>
-          {!title.trim()
-            ? "제목을 입력하세요."
-            : !hasChat
-              ? "요구사항을 한 번 이상 보내세요."
-              : ""}
+          요구사항을 적어주세요. (Opus와 대화로 다듬어도 되고, 바로 시작해도 됩니다)
         </div>
       )}
     </div>
@@ -416,6 +426,116 @@ function toneFor(status: string): "passed" | "failed" | "running" | "pending" {
   return "pending";
 }
 
+// The decomposed plan-step descriptions ("무엇을 하는지"), persisted on the run
+// when the plan is approved. Available even before approval, so the table can
+// show the whole roadmap upfront.
+function planStepDescriptions(detail: RunDetail): string[] {
+  try {
+    const raw = (detail as { planSteps?: string | null }).planSteps;
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr.filter((s): s is string => typeof s === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+type RowState = { icon: string; label: string; tone: "passed" | "failed" | "running" | "pending" };
+
+// A plan-step row's status, derived from its work-span group (if it has started).
+function planRowState(group: StepGroup | undefined): RowState {
+  if (!group) return { icon: "•", label: "대기", tone: "pending" };
+  if (group.steps.some((s) => s.kind === "commit" && s.status === "passed"))
+    return { icon: "✅", label: "완료", tone: "passed" };
+  if (group.steps.some((s) => s.status === "running"))
+    return { icon: "⏳", label: "진행 중", tone: "running" };
+  if (group.steps.some((s) => s.status === "failed"))
+    return { icon: "🔁", label: "재시도 중", tone: "failed" };
+  return { icon: "⏳", label: "진행 중", tone: "running" };
+}
+
+// Who's on the row: the actual builder once it starts, else 태경 as the default
+// upcoming assignee.
+function planRowAgent(group: StepGroup | undefined) {
+  const build = group?.steps.find((s) => s.kind === "build");
+  return build ? agentForStep(build) : agentById("taekyung");
+}
+
+// The 단계별 roadmap as a table: every plan step as a row (작업 내용 · 담당 · 상태),
+// visible from approval onward. The active step expands to show its live
+// 구현→검증→커밋 loop inline.
+function PlanStepTable({
+  descriptions,
+  groups,
+  total,
+  needsInput = false,
+}: {
+  descriptions: string[];
+  groups: StepGroup[];
+  total: number;
+  needsInput?: boolean;
+}) {
+  const groupByNo = new Map(groups.map((g) => [g.no, g]));
+  const count = Math.max(descriptions.length, total, groups.length);
+  const rows = Array.from({ length: count }, (_, i) => i + 1);
+  const doneCount = rows.filter((no) => planRowState(groupByNo.get(no)).tone === "passed").length;
+
+  return (
+    <div className="plan-table" style={{ marginTop: 12 }}>
+      <div className="plan-table-caption">
+        <b>단계별 작업</b>
+        <span className="muted small">
+          {doneCount}/{count} 완료
+        </span>
+      </div>
+      <div className="plan-thead">
+        <span>#</span>
+        <span>작업 내용</span>
+        <span>담당</span>
+        <span>상태</span>
+      </div>
+      {rows.map((no) => {
+        const group = groupByNo.get(no);
+        let st = planRowState(group);
+        // While parked at needs_input, the stuck step is the one with failed
+        // work and no commit — surface it as "개입 대기", not "재시도 중".
+        if (needsInput && st.tone === "failed") {
+          st = { icon: "🚧", label: "개입 대기", tone: "failed" };
+        }
+        const agent = planRowAgent(group);
+        const desc = descriptions[no - 1] ?? `단계 ${no}`;
+        const showFlow = !!group && st.tone !== "pending";
+        return (
+          <div key={no} className={`plan-trow plan-${st.tone}`}>
+            <span className="plan-no">{no}</span>
+            <span className="plan-desc">
+              {desc}
+              {showFlow && group && (
+                <span className="plan-subflow">
+                  {group.steps.map((s, i) => (
+                    <span key={s.id} className="flow-item">
+                      {i > 0 && <span className="flow-arrow">→</span>}
+                      <FlowPill step={s} />
+                    </span>
+                  ))}
+                </span>
+              )}
+            </span>
+            <span className="plan-who">
+              <PixelAvatar agent={agent} size={20} active={st.tone === "running"} />
+              <span style={{ color: ROLE_COLOR[agent.role] }}>{agent.name}</span>
+            </span>
+            <span className="plan-status">
+              <span className={`badge step-${st.tone}`}>
+                {st.icon} {st.label}
+              </span>
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // One action in a plan step's loop: the icon, who did it, retry number, and a
 // pass/fail/running mark.
 function FlowPill({ step }: { step: Step }) {
@@ -444,53 +564,29 @@ function FlowPill({ step }: { step: Step }) {
   );
 }
 
-// One plan step: header (단계 N/M + 상태) and the horizontal 구현→검증→…→커밋 flow.
-function StepGroupRow({ group, total }: { group: StepGroup; total: number }) {
-  const committed = group.steps.some((s) => s.kind === "commit" && s.status === "passed");
-  const running = group.steps.some((s) => s.status === "running");
-  const badge = committed
-    ? { icon: "✅", label: "완료", tone: "passed" }
-    : running
-      ? { icon: "⏳", label: "진행 중", tone: "running" }
-      : { icon: "•", label: "대기", tone: "pending" };
-
-  return (
-    <div className="flow-group">
-      <div className="flow-group-head">
-        <b>단계 {group.no}{total ? `/${total}` : ""}</b>
-        <span className={`badge step-${badge.tone}`}>
-          {badge.icon} {badge.label}
-        </span>
-      </div>
-      <div className="flow-line">
-        {group.steps.map((s, i) => (
-          <span key={s.id} className="flow-item">
-            {i > 0 && <span className="flow-arrow">→</span>}
-            <FlowPill step={s} />
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 export function RunProgress({ detail }: { detail: RunDetail }) {
   const planStep = detail.steps.find((s) => s.kind === "plan") ?? null;
   const groups = groupByPlanStep(detail.steps);
-  const total = planStepTotal(detail.steps);
+  const descriptions = planStepDescriptions(detail);
+  const total = planStepTotal(detail.steps) || descriptions.length;
   const awaiting = detail.status === "awaiting_approval";
   const building = detail.status === "building" || detail.status === "verifying";
   const planDone = !!planStep && planStep.status === "passed";
+  const planFailed = planStep?.status === "failed";
+  // 호재 is actively thinking whenever the plan step is running (or the run is
+  // spinning up before the step even lands). This is the long, silent stretch
+  // that felt "frozen" — so make him visibly work (fire + blink), not idle grey.
+  const planRunning = !awaiting && !planDone && !planFailed;
   const hojae = agentById("hojae");
-  const taekyung = agentById("taekyung");
 
   const planBadge = awaiting
     ? { icon: "⏳", label: "승인 대기", tone: "running" }
     : planDone
       ? { icon: "✅", label: "완료", tone: "passed" }
-      : planStep?.status === "failed"
+      : planFailed
         ? { icon: "✕", label: "실패", tone: "failed" }
-        : { icon: "⏳", label: "진행 중", tone: "running" };
+        : { icon: "⏳", label: "기획하는 중…", tone: "running" };
 
   return (
     <div className="panel">
@@ -506,16 +602,25 @@ export function RunProgress({ detail }: { detail: RunDetail }) {
         </div>
         <div className="flow-line">
           <span
-            className={`flow-pill flow-${awaiting ? "running" : planDone ? "passed" : planStep?.status === "failed" ? "failed" : "pending"}`}
+            className={`flow-pill flow-${awaiting || planRunning ? "running" : planDone ? "passed" : "failed"}`}
           >
             <span className="flow-ico">📋</span>
             <span className={awaiting ? "blink" : undefined} style={{ display: "inline-flex" }}>
-              <PixelAvatar agent={hojae} size={18} active={awaiting} />
+              {/* on fire while thinking, blinking while waiting for you */}
+              <PixelAvatar agent={hojae} size={18} active={planRunning} />
             </span>
             <span className="flow-verb">기획 · {hojae.name}</span>
           </span>
         </div>
       </div>
+
+      {planRunning && (
+        <div className="muted small planning-live" style={{ margin: "10px 0 2px", textAlign: "center" }}>
+          <span className="planning-dots" aria-hidden />
+          호재가 요구사항을 뜯어보며{" "}
+          <b style={{ color: "var(--yellow)" }}>계획을 세우는 중</b>이에요 — 30초~1분 정도 걸릴 수 있어요.
+        </div>
+      )}
 
       {awaiting && (
         <div className="muted small" style={{ margin: "10px 0 2px", textAlign: "center" }}>
@@ -524,33 +629,22 @@ export function RunProgress({ detail }: { detail: RunDetail }) {
         </div>
       )}
 
-      {groups.map((g) => (
-        <StepGroupRow key={g.no} group={g} total={total} />
-      ))}
-
-      {/* Between approval and the first build span appearing, show that work is
-          spinning up so the click has a visible consequence. */}
-      {groups.length === 0 && planDone && !awaiting && building && (
-        <div className="flow-group" style={{ marginTop: 12 }}>
-          <div className="flow-group-head">
-            <b>구현 준비</b>
-            <span className="badge step-running">⏳ 시작 중</span>
-          </div>
-          <div className="flow-line">
-            <span className="flow-pill flow-running">
-              <span className="flow-ico">🔨</span>
-              <span className="blink" style={{ display: "inline-flex" }}>
-                <PixelAvatar agent={taekyung} size={18} active />
-              </span>
-              <span className="flow-verb">태경이 구현을 준비하는 중…</span>
-            </span>
-          </div>
-        </div>
+      {/* 단계별 작업 — the whole roadmap as a table, from approval onward. */}
+      {(descriptions.length > 0 || groups.length > 0) && (
+        <PlanStepTable
+          descriptions={descriptions}
+          groups={groups}
+          total={total}
+          needsInput={detail.status === "needs_input"}
+        />
       )}
 
-      {groups.length === 0 && planDone && !awaiting && !building && (
-        <div className="muted small" style={{ marginTop: 10 }}>
-          승인 후 단계별 구현이 시작됩니다.
+      {/* Approval → first build span: the table already lists every step as 대기,
+          so just note that work is kicking off. */}
+      {groups.length === 0 && planDone && !awaiting && building && (
+        <div className="muted small planning-live" style={{ marginTop: 10, textAlign: "center" }}>
+          <span className="planning-dots" aria-hidden />
+          태경이 1단계 구현을 준비하는 중…
         </div>
       )}
     </div>
@@ -818,6 +912,91 @@ export function ApprovalPanel({
           >
             {busy === "revise" ? "⏳ 다시 세우는 중…" : "🔁 수정 요청"}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Intervention gate: shown when a step is stuck (needs_input) — after the
+// builders' retries AND 호재's escalation both failed. The user is the final
+// escalation: give fix guidance (re-runs the step), accept the current attempt
+// as-is, skip the step, or stop the run.
+export function InterventionPanel({
+  reason,
+  onGuide,
+  onCommit,
+  onSkip,
+  onAbort,
+}: {
+  reason?: string | null;
+  onGuide: (feedback: string) => void | Promise<void>;
+  onCommit: () => void | Promise<void>;
+  onSkip: () => void | Promise<void>;
+  onAbort: () => void | Promise<void>;
+}) {
+  const [feedback, setFeedback] = useState("");
+  const [busy, setBusy] = useState<null | "guide" | "commit" | "skip" | "abort">(null);
+  const hojae = agentById("hojae");
+
+  async function run(kind: "guide" | "commit" | "skip" | "abort", fn: () => void | Promise<void>) {
+    if (busy) return;
+    setBusy(kind);
+    try {
+      await fn();
+    } catch {
+      setBusy(null); // failed → let them retry (success flips status + unmounts)
+    }
+  }
+
+  return (
+    <div className="panel" style={{ borderColor: "var(--yellow)" }}>
+      <div className="row" style={{ gap: 8, alignItems: "center" }}>
+        <PixelAvatar agent={hojae} size={28} />
+        <b>🚧 막힌 단계 — 개입이 필요해요</b>
+      </div>
+      <div className="muted small" style={{ marginTop: 8 }}>
+        태경·민재가 여러 번 시도하고 <b style={{ color: ROLE_COLOR.plan }}>호재</b>가 개입해 해결책까지
+        제시했지만 이 단계가 검증을 통과하지 못했습니다. 어떻게 진행할까요?
+      </div>
+      {reason && (
+        <div className="plan-preview" style={{ marginTop: 10 }}>
+          <div className="muted small" style={{ marginBottom: 4 }}>마지막 검증 사유</div>
+          <Markdown>{reason}</Markdown>
+        </div>
+      )}
+
+      <div style={{ marginTop: 12 }}>
+        <div className="muted small" style={{ marginBottom: 6 }}>
+          직접 지침을 주면 그대로 이 단계를 다시 시도합니다 (가장 권장):
+        </div>
+        <textarea
+          rows={3}
+          placeholder="예: prisma를 6.x로 낮춰서 @auth/prisma-adapter와 맞춰줘 / next는 15.3.4 정확히 써"
+          value={feedback}
+          onChange={(e) => setFeedback(e.target.value)}
+          disabled={!!busy}
+        />
+        <div className="row" style={{ marginTop: 10, gap: 8, flexWrap: "wrap" }}>
+          <button
+            disabled={!feedback.trim() || !!busy}
+            onClick={() => run("guide", () => onGuide(feedback.trim()))}
+          >
+            {busy === "guide" ? "⏳ 다시 시도 중…" : "🧭 지침 주고 다시 시도"}
+          </button>
+          <button className="ghost" disabled={!!busy} onClick={() => run("commit", onCommit)}>
+            {busy === "commit" ? "처리 중…" : "✅ 현재 상태로 커밋"}
+          </button>
+          <button className="ghost" disabled={!!busy} onClick={() => run("skip", onSkip)}>
+            {busy === "skip" ? "처리 중…" : "⏭️ 이 단계 건너뛰기"}
+          </button>
+          <button className="danger" disabled={!!busy} onClick={() => run("abort", onAbort)}>
+            {busy === "abort" ? "처리 중…" : "✖ 중단"}
+          </button>
+        </div>
+        <div className="muted small" style={{ marginTop: 8 }}>
+          <b>커밋</b>: 지금까지의 변경을 그대로 확정하고 다음 단계로 · <b>건너뛰기</b>: 이 단계 변경을
+          버리고 다음 단계로 · <b>중단</b>: 작업 종료.
         </div>
       </div>
     </div>

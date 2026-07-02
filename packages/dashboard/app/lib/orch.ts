@@ -1,0 +1,33 @@
+// The orchestrator owns the SQLite DB (host process). The dashboard reaches it
+// over HTTP instead of opening the DB file itself — see http-data.ts on the
+// orchestrator for why (bind-mount torn reads). Same base URL the approve/chat
+// proxies use.
+export const ORCH_URL =
+  (process.env.ORCH_INTERNAL_URL ?? "http://127.0.0.1:4000").replace(/\/$/, "");
+
+// Server-side JSON fetch of an orchestrator data endpoint (for server components).
+export async function orchJson<T>(path: string): Promise<T> {
+  const res = await fetch(`${ORCH_URL}${path}`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`orchestrator ${path} → HTTP ${res.status}`);
+  return (await res.json()) as T;
+}
+
+// Forward a request to the orchestrator, preserving method/body/status — for the
+// dashboard's /api/* route handlers that the client already calls.
+export async function orchProxy(
+  path: string,
+  init?: { method?: string; body?: string }
+): Promise<Response> {
+  const upstream = await fetch(`${ORCH_URL}${path}`, {
+    method: init?.method ?? "GET",
+    headers: { "Content-Type": "application/json" },
+    body: init?.body,
+    cache: "no-store",
+  });
+  return new Response(upstream.body, {
+    status: upstream.status,
+    headers: {
+      "Content-Type": upstream.headers.get("Content-Type") ?? "application/json",
+    },
+  });
+}
