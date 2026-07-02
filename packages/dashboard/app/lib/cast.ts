@@ -5,9 +5,10 @@
 //
 //   기획 (plan)   = Opus       → 호재
 //   개발 (build)  = Sonnet     → 태경 · 민재
-//   검증 (verify) = codex      → 주호 · 동환
-//                 = Claude     → 유준 (런타임·통합 관점 2차 리뷰)
-//                 = 빌드 게이트 → 성호 (빌드/타입체크 실제 실행, QA)
+//   코드 품질 (verify) = codex(품질)  → 주호 (SOLID 등 공학 원칙)
+//   보안 검증 (verify) = codex(보안)  → 동환 (보안 전담 감사)
+//   통합 검증 (verify) = Claude(통합) → 유준 (런타임·배선 동작)
+//   QA       (verify) = 빌드(빌드)   → 성호 (빌드/타입체크 실제 실행)
 //
 // This module is pure data + lookups so both server and client components can
 // use it. How a character is DRAWN lives in agents.tsx (SVG components).
@@ -86,9 +87,9 @@ export const CAST: Agent[] = [
     id: "juho",
     name: "주호",
     role: "verify",
-    roleLabel: "코드 검증",
+    roleLabel: "코드 품질",
     engineLabel: "codex",
-    blurb: "코드가 요구사항을 만족하는지 검사해요",
+    blurb: "SOLID·중복·설계 원칙을 지켰는지 봐요",
     hair: "#4a3b2b",
     shirt: "#b98bff",
     accent: "#7a4fd0",
@@ -99,9 +100,9 @@ export const CAST: Agent[] = [
     id: "donghwan",
     name: "동환",
     role: "verify",
-    roleLabel: "코드 검증",
+    roleLabel: "보안 검증",
     engineLabel: "codex",
-    blurb: "빠뜨린 결함이 없는지 다시 살펴요",
+    blurb: "취약점이 없는지 보안 감사를 해요",
     hair: "#2b2b33",
     shirt: "#ff9f6b",
     accent: "#c96a35",
@@ -113,7 +114,7 @@ export const CAST: Agent[] = [
     name: "유준",
     role: "verify",
     roleLabel: "통합 검증",
-    engineLabel: "Claude",
+    engineLabel: "Sonnet",
     blurb: "실제로 돌아갈지 배선을 따라가며 살펴요",
     hair: "#23303f",
     shirt: "#8fb7ff",
@@ -208,24 +209,29 @@ export function membersOf(role: Role): Agent[] {
   return CAST.filter((a) => a.role === role);
 }
 
-// ── Verify seats are ENGINE-specific ────────────────────────────────────────
-// The review fan-out now mixes engines, so a verify span/turn maps to the
-// teammate for its engine (codex rotates between two reviewers by attempt;
-// claude and the build gate are one person each).
-const VERIFY_BY_ENGINE: Record<string, string[]> = {
-  codex: ["juho", "donghwan"],
-  claude: ["yujun"],
-  system: ["seongho"],
+// ── Verify seats map by REVIEWER IDENTITY ───────────────────────────────────
+// The pipeline stamps each verify span/log/chat with the reviewer's name key
+// (품질/보안/통합/빌드). Two codex reviewers share an engine, so identity — not
+// engine — decides the seat. Legacy rows (engine-only: codex/claude/system)
+// fall back to the old attempt-rotation so history still renders.
+const VERIFY_SEAT: Record<string, string> = {
+  "품질": "juho",
+  "보안": "donghwan",
+  "통합": "yujun",
+  "빌드": "seongho",
+  tests: "seongho",
 };
 
-function verifyAgent(engineish: string | null | undefined, pick: number): Agent {
-  const key = (engineish ?? "").toLowerCase();
-  const ids = key.includes("claude")
-    ? VERIFY_BY_ENGINE.claude
-    : key === "system" || key.includes("build") || key.includes("test")
-      ? VERIFY_BY_ENGINE.system
-      : VERIFY_BY_ENGINE.codex; // codex + unknown legacy rows
-  return agentById(ids[pick % ids.length]);
+function verifyAgent(key: string | null | undefined, pick: number): Agent {
+  const k = (key ?? "").trim();
+  const seat = VERIFY_SEAT[k];
+  if (seat) return agentById(seat);
+  const low = k.toLowerCase();
+  if (low.includes("claude")) return agentById("yujun");
+  if (low === "system" || low.includes("build") || low.includes("test")) return agentById("seongho");
+  // legacy codex rows: keep the old 주호/동환 rotation by attempt
+  const legacy = ["juho", "donghwan"];
+  return agentById(legacy[pick % legacy.length]);
 }
 
 // Steps: pick teammate by attempt (a retry hands off to the other person),
@@ -234,7 +240,12 @@ export function agentForStep(step: Step): Agent {
   const role = roleForKind(step.kind);
   if (role === "system") return SYSTEM_AGENT;
   const pick = step.attempt && step.attempt > 0 ? step.attempt - 1 : hashStr(step.id);
-  if (role === "verify") return verifyAgent(step.engine, pick);
+  if (role === "verify") {
+    // New spans carry the reviewer name in the label ("리뷰: 품질"); older ones
+    // only have an engine — verifyAgent handles both.
+    const named = step.label.match(/^(?:리뷰|테스트):\s*(.+)$/);
+    return verifyAgent(named?.[1] ?? step.engine, pick);
+  }
   const members = membersOf(role);
   if (members.length === 1) return members[0];
   return members[pick % members.length];

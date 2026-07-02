@@ -61,10 +61,10 @@ agent-loop/
 | `pipeline.ts` | `RunPipeline` — plan→approve→build/**review 팬아웃**/commit **상태머신**. 정책만 담고 부수효과는 주입된 추상화로 호출. 단계별 메서드(`plan`/`approve`/`buildVerifyCommit`/`review`)로 분리. 각 국면을 **Step(작업 span)** 으로 방출 |
 | `agents/types.ts` | `Planner` · `Builder` · `Verifier` · `Reviewer` 인터페이스(ISP). 요청/결과 타입 |
 | `agents/claude-agent.ts` | `ClaudePlanner`, `ClaudeBuilder` — Claude Agent SDK 스트리밍 어댑터. `PhaseReporter`(log+usage)만 의존 |
-| `agents/review-policy.ts` | **모든 LLM 리뷰어가 공유하는 판정 규칙서** — 중대 결함 일괄 보고, 범위 게이트, 이전 거절 이력(수렴 규칙), 보안 필수 점검. 리뷰 기준 변경은 여기 한 곳 |
-| `agents/codex-agent.ts` | `CodexVerifier` — `codex exec` 호출 + 토큰/판정 파싱. 정적 계획 준수 + 보안 관점 (주호·동환) |
-| `agents/claude-reviewer.ts` | `ClaudeReviewer` — Claude 2차 리뷰. 런타임·통합(배선이 실제로 동작하나) 관점, codex와 상보적 (유준) |
-| `agents/build-gate.ts` | `BuildGateReviewer` — 워크스페이스의 빌드/타입체크를 **실제 실행**하는 결정적 QA 게이트. build 스크립트→`npm run build`, tsconfig→`tsc --noEmit`, 둘 다 없으면 통과 (성호) |
+| `agents/review-policy.ts` | **모든 LLM 리뷰어가 공유하는 판정 규칙서 + 렌즈들** — 중대 결함 일괄 보고, 범위 게이트, 이전 거절 이력(수렴 규칙)이 공용이고, `QUALITY_LENS`(공학 원칙)/`SECURITY_LENS`(보안)로 리뷰어별 관점을 분리. 리뷰 기준 변경은 여기 한 곳 |
+| `agents/codex-agent.ts` | `CodexVerifier` — `codex exec` 호출 + 토큰/판정 파싱. **렌즈별로 여러 번 인스턴스화**: `품질`(주호 — 정확성+SOLID/DRY/계층) · `보안`(동환 — 보안 전담 감사) |
+| `agents/claude-reviewer.ts` | `ClaudeReviewer`(`통합`) — Claude 2차 리뷰. 런타임·통합(배선이 실제로 동작하나) 관점 (유준) |
+| `agents/build-gate.ts` | `BuildGateReviewer`(`빌드`) — 워크스페이스의 빌드/타입체크를 **실제 실행**하는 결정적 QA 게이트. build 스크립트→`npm run build`, tsconfig→`tsc --noEmit`, 둘 다 없으면 통과 (성호) |
 | `agents/command-reviewer.ts` | `CommandReviewer` — 셸 명령(TEST_CMD) 실행, exit 0 = PASS. 테스트 러너를 리뷰 팬아웃에 합류시키는 `Reviewer` |
 | `approval-gate.ts` | `ApprovalGate` — 사람 승인을 기다리는 async 게이트(runId→resolver) |
 | `reporter.ts` | `PhaseReporter`(log/usage) ⊂ `RunReporter`/`StepHandle`. `DbRunReporter` — runId 바인딩 파사드. `startStep()`→step에 바인딩된 `StepHandle`(log/usage/verdict/finish) |

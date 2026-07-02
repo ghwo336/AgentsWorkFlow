@@ -32,7 +32,7 @@ const VERDICT_FORMAT = [
 // writes disallowed); reports usage back through VerifyResult so the pipeline
 // attributes cost to its step like every other reviewer.
 export class ClaudeReviewer implements Reviewer {
-  readonly name = "claude";
+  readonly name = "통합";
   readonly kind = "review" as const;
   readonly engine = "claude";
   constructor(readonly model: string) {}

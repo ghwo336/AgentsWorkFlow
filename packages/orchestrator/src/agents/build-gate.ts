@@ -15,7 +15,7 @@ const pexec = promisify(exec);
 //   2. else tsconfig.json + a local typescript install → `npx tsc --noEmit`
 //   3. else nothing to run → PASS (a vanilla HTML/JS project has no build)
 export class BuildGateReviewer implements Reviewer {
-  readonly name = "build";
+  readonly name = "빌드";
   readonly kind = "test" as const;
   readonly engine = "system";
   readonly model = "-";

@@ -5,6 +5,7 @@ import { ClaudeBuilder, ClaudePlanner } from "./agents/claude-agent.js";
 import { ClaudeReviewer } from "./agents/claude-reviewer.js";
 import { CodexVerifier } from "./agents/codex-agent.js";
 import { CommandReviewer } from "./agents/command-reviewer.js";
+import { QUALITY_LENS, SECURITY_LENS } from "./agents/review-policy.js";
 import type { InterventionDecision } from "@agent-loop/shared/types";
 import type { Reviewer } from "./agents/types.js";
 import type { ApprovalDecision } from "./approval-gate.js";
@@ -51,11 +52,21 @@ const store = new RunStore();
 // Reviewer fan-out. Add a reviewer here (another engine, a second code
 // reviewer, a linter) and it shows up as a parallel node — the pipeline is
 // unchanged (OCP). The optional test-runner is enabled by setting TEST_CMD.
-//   codex(주호·동환)  — static plan-compliance + security review
-//   claude(유준)    — runtime/integration lens, second LLM opinion
-//   build(성호)     — actually runs the workspace build/typecheck (free, deterministic)
+// Each reviewer's `name` is its identity key: it appears in step labels
+// (리뷰: 품질), commit messages, and maps to a fixed teammate in the dashboard.
+//   품질(주호, codex)   — 정확성 + 소프트웨어 공학 원칙(SOLID/DRY/계층)
+//   보안(동환, codex)   — 보안 전담 감사
+//   통합(유준, claude)  — 런타임/배선이 실제로 동작하는지
+//   빌드(성호, system)  — 빌드/타입체크 실제 실행 (무료·결정적)
 const reviewers: Reviewer[] = [
-  new CodexVerifier(config.verdictSchemaPath, config.codexModel),
+  new CodexVerifier(config.verdictSchemaPath, config.codexModel, {
+    name: "품질",
+    lens: QUALITY_LENS,
+  }),
+  new CodexVerifier(config.verdictSchemaPath, config.codexModel, {
+    name: "보안",
+    lens: SECURITY_LENS,
+  }),
   new ClaudeReviewer(config.reviewModel),
   new BuildGateReviewer(),
   ...(config.testCmd ? [new CommandReviewer("tests", config.testCmd)] : []),

@@ -529,8 +529,9 @@ export class RunPipeline {
       const lastReviewStepId = reviews[reviews.length - 1]?.stepId ?? buildStep.id;
 
       // 💬 each reviewer replies to the builder with its verdict (team chat).
-      // engine attributes the turn to the right teammate (codex→주호·동환,
-      // claude→유준, system→성호) now that the fan-out is multi-engine.
+      // The reviewer's identity key (name: 품질/보안/통합/빌드) rides in `engine`
+      // so the dashboard seats the turn with the right teammate — two codex
+      // reviewers share an engine, so engine alone is ambiguous.
       for (const r of reviews) {
         await reporter.chat({
           role: "verify",
@@ -539,7 +540,7 @@ export class RunPipeline {
           toRole: "build",
           stepLabel: tag,
           passed: r.result.passed,
-          engine: r.reviewer.engine,
+          engine: r.reviewer.name,
           text: r.result.reason,
         });
       }
@@ -610,7 +611,10 @@ export class RunPipeline {
           parentId: ctx.buildStepId,
           orderIdx: ctx.order(),
         });
-        await step.log("verify", `${reviewer.name} 검토 중…`, { model: reviewer.engine });
+        // model carries the reviewer's identity key (품질/보안/통합/빌드) so the
+        // dashboard can seat each log line with the right teammate — engine alone
+        // can't tell the two codex reviewers apart.
+        await step.log("verify", `${reviewer.name} 검토 중…`, { model: reviewer.name });
         const result = await reviewer.review({
           cwd: ctx.cwd,
           plan: ctx.approvedPlan,
@@ -633,7 +637,7 @@ export class RunPipeline {
         await step.log(
           "verify",
           `${reviewer.name} ${result.passed ? "통과 ✅" : "거절 ❌"}: ${result.reason}`,
-          { level: result.passed ? "info" : "warn", model: reviewer.engine }
+          { level: result.passed ? "info" : "warn", model: reviewer.name }
         );
         await step.finish(result.passed ? "passed" : "failed", result.reason);
         return { reviewer, result, stepId: step.id };

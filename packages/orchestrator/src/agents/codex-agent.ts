@@ -66,12 +66,17 @@ const CODEX_VERDICT_FORMAT = [
 // Run codex (read-only sandbox) as a strict reviewer over the supplied diff,
 // forcing a structured {verdict, reason} response via --output-schema.
 // Auth is the user's ChatGPT subscription (codex login) — no API billing.
-async function runCodexVerify(req: VerifyRequest, schemaPath: string): Promise<VerifyResult> {
+async function runCodexVerify(
+  req: VerifyRequest,
+  schemaPath: string,
+  lens?: string[]
+): Promise<VerifyResult> {
   const tmp = await mkdtemp(join(tmpdir(), "agentloop-codex-"));
   const lastMsgPath = join(tmp, "verdict.json");
   const prompt = buildReviewPrompt(req.plan, req.diff, {
     attempt: req.attempt,
     previousFailures: req.previousFailures,
+    lens,
     verdictFormat: CODEX_VERDICT_FORMAT,
   });
 
@@ -175,16 +180,26 @@ function extractVerdict(raw: string): CodexVerdict {
 
 // codex-backed reviewer. The verdict schema path is injected so this module
 // stays free of orchestrator config wiring (DIP). It satisfies both Verifier
-// (legacy single-verify) and Reviewer (fan-out), so it can be dropped into the
-// reviewers array with any others.
+// (legacy single-verify) and Reviewer (fan-out). One class, many identities:
+// the composition root instantiates it once per LENS (품질 리뷰어 주호, 보안
+// 리뷰어 동환) — same engine, different job description.
 export class CodexVerifier implements Verifier, Reviewer {
-  readonly name = "codex";
   readonly kind = "review" as const;
   readonly engine = "codex";
-  constructor(private readonly schemaPath: string, readonly model: string = "gpt-5.5") {}
+  readonly name: string;
+  private readonly lens?: string[];
+
+  constructor(
+    private readonly schemaPath: string,
+    readonly model: string = "gpt-5.5",
+    identity: { name: string; lens?: string[] } = { name: "codex" }
+  ) {
+    this.name = identity.name;
+    this.lens = identity.lens;
+  }
 
   verify(req: VerifyRequest): Promise<VerifyResult> {
-    return runCodexVerify(req, this.schemaPath);
+    return runCodexVerify(req, this.schemaPath, this.lens);
   }
   review(req: VerifyRequest): Promise<VerifyResult> {
     return this.verify(req);
