@@ -8,6 +8,11 @@ import { stepOutcome } from "../_plan-steps";
 
 type SummaryFilter = "all" | "done" | "error";
 
+// Long runs pile up dozens of work summaries; show the newest PAGE_SIZE first
+// (what the user actually checks — "지금 무슨 일이 벌어졌나") and reveal older
+// ones on demand.
+const PAGE_SIZE = 10;
+
 export function AgentWorkSummary({
   steps,
   status,
@@ -18,14 +23,24 @@ export function AgentWorkSummary({
   plan?: string;
 }) {
   const [filter, setFilter] = useState<SummaryFilter>("all");
+  const [limit, setLimit] = useState(PAGE_SIZE);
   const awaitingApproval = status === "awaiting_approval";
   const visible = steps.filter((step) => step.kind !== "commit" || step.summary);
 
   const doneCount = visible.filter((s) => s.status === "passed").length;
   const errorCount = visible.filter((s) => s.status === "failed").length;
-  const shown = visible.filter((s) =>
-    filter === "done" ? s.status === "passed" : filter === "error" ? s.status === "failed" : true
-  );
+  const matched = visible
+    .filter((s) =>
+      filter === "done" ? s.status === "passed" : filter === "error" ? s.status === "failed" : true
+    )
+    .sort((a, b) => b.orderIdx - a.orderIdx); // newest work first
+  const shown = matched.slice(0, limit);
+  const hiddenCount = matched.length - shown.length;
+
+  const pickFilter = (f: SummaryFilter) => {
+    setFilter(f);
+    setLimit(PAGE_SIZE); // a new filter starts back at the latest page
+  };
 
   const TABS: { key: SummaryFilter; label: string }[] = [
     { key: "all", label: `전체 ${visible.length}` },
@@ -42,7 +57,7 @@ export function AgentWorkSummary({
             <button
               key={t.key}
               className={`viz-tab${filter === t.key ? " active" : ""}`}
-              onClick={() => setFilter(t.key)}
+              onClick={() => pickFilter(t.key)}
             >
               {t.label}
             </button>
@@ -56,18 +71,29 @@ export function AgentWorkSummary({
           {filter === "done" ? "아직 구현 완료된 작업이 없습니다." : "발생한 오류가 없습니다. 🎉"}
         </div>
       ) : (
-        <div className="agent-summary-list">
-          {shown.map((step) => (
-            <SummaryItem
-              key={step.id}
-              step={step}
-              awaitingApproval={awaitingApproval && step.kind === "plan"}
-              // The plan step's stored summary is compacted; show the full plan
-              // (markdown) when expanded so 더보기 actually reveals everything.
-              fullText={step.kind === "plan" ? plan : undefined}
-            />
-          ))}
-        </div>
+        <>
+          <div className="agent-summary-list">
+            {shown.map((step) => (
+              <SummaryItem
+                key={step.id}
+                step={step}
+                awaitingApproval={awaitingApproval && step.kind === "plan"}
+                // The plan step's stored summary is compacted; show the full plan
+                // (markdown) when expanded so 더보기 actually reveals everything.
+                fullText={step.kind === "plan" ? plan : undefined}
+              />
+            ))}
+          </div>
+          {hiddenCount > 0 && (
+            <button
+              className="ghost small"
+              style={{ marginTop: 10, width: "100%" }}
+              onClick={() => setLimit((n) => n + PAGE_SIZE)}
+            >
+              ▾ 이전 작업 {hiddenCount}개 더보기
+            </button>
+          )}
+        </>
       )}
     </div>
   );
