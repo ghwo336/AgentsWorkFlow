@@ -52,8 +52,8 @@ const store = new RunStore();
 // reviewer, a linter) and it shows up as a parallel node — the pipeline is
 // unchanged (OCP). The optional test-runner is enabled by setting TEST_CMD.
 //   codex(주호·동환)  — static plan-compliance + security review
-//   claude(오유준)    — runtime/integration lens, second LLM opinion
-//   build(천성호)     — actually runs the workspace build/typecheck (free, deterministic)
+//   claude(유준)    — runtime/integration lens, second LLM opinion
+//   build(성호)     — actually runs the workspace build/typecheck (free, deterministic)
 const reviewers: Reviewer[] = [
   new CodexVerifier(config.verdictSchemaPath, config.codexModel),
   new ClaudeReviewer(config.reviewModel),

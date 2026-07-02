@@ -530,7 +530,7 @@ export class RunPipeline {
 
       // 💬 each reviewer replies to the builder with its verdict (team chat).
       // engine attributes the turn to the right teammate (codex→주호·동환,
-      // claude→오유준, system→천성호) now that the fan-out is multi-engine.
+      // claude→유준, system→성호) now that the fan-out is multi-engine.
       for (const r of reviews) {
         await reporter.chat({
           role: "verify",

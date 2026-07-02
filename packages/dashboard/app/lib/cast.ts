@@ -6,8 +6,8 @@
 //   기획 (plan)   = Opus       → 호재
 //   개발 (build)  = Sonnet     → 태경 · 민재
 //   검증 (verify) = codex      → 주호 · 동환
-//                 = Claude     → 오유준 (런타임·통합 관점 2차 리뷰)
-//                 = 빌드 게이트 → 천성호 (빌드/타입체크 실제 실행, QA)
+//                 = Claude     → 유준 (런타임·통합 관점 2차 리뷰)
+//                 = 빌드 게이트 → 성호 (빌드/타입체크 실제 실행, QA)
 //
 // This module is pure data + lookups so both server and client components can
 // use it. How a character is DRAWN lives in agents.tsx (SVG components).
@@ -110,7 +110,7 @@ export const CAST: Agent[] = [
   },
   {
     id: "yujun",
-    name: "오유준",
+    name: "유준",
     role: "verify",
     roleLabel: "검증",
     engineLabel: "Claude",
@@ -123,7 +123,7 @@ export const CAST: Agent[] = [
   },
   {
     id: "seongho",
-    name: "천성호",
+    name: "성호",
     role: "verify",
     roleLabel: "QA",
     engineLabel: "빌드·테스트",
@@ -275,7 +275,7 @@ export const USER_AGENT: Agent = {
 
 // Team-chat turn → character. role+attempt pick the SAME teammate the step
 // avatars use (attempt parity); verify turns use their engine (codex→주호·동환,
-// claude→오유준, system→천성호) so the chat matches the step nodes.
+// claude→유준, system→성호) so the chat matches the step nodes.
 export function agentForChat(msg: { role: string; attempt?: number; engine?: string | null }): Agent {
   if (msg.role === "user") return USER_AGENT;
   if (msg.role === "plan") return membersOf("plan")[0] ?? SYSTEM_AGENT;
