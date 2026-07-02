@@ -5,6 +5,7 @@ import {
   AgentChat,
   AgentWorkSummary,
   ApprovalPanel,
+  FollowUpPanel,
   InterventionPanel,
   LiveLog,
   NewTaskForm,
@@ -104,6 +105,9 @@ export default function ProjectWorkspace() {
               )}
               {(detail.status === "rejected" || detail.status === "failed") && (
                 <ResumePanel reason={detail.error} onRetry={() => retry()} />
+              )}
+              {detail.status === "committed" && (
+                <FollowUpPanel baseTitle={detail.title} commit={detail.commit} onStart={start} />
               )}
               <AgentChat msgs={detail.chatMsgs ?? []} />
               <AgentWorkSummary
