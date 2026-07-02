@@ -368,7 +368,10 @@ export function TeamRoster({ activeIds }: { activeIds?: Set<string> } = {}) {
                     <DeskLaptop laptop={a.laptop} w={62} />
                   </div>
                   <div className="roster-name pixel">{a.name}</div>
-                  <div className="roster-engine muted small">{a.engineLabel}</div>
+                  {/* 직책이 주 정보(코드 검증/통합 검증/QA…), 엔진은 부가 표기 */}
+                  <div className="roster-engine muted small">
+                    {a.roleLabel} · {a.engineLabel}
+                  </div>
                 </div>
                 );
               })}
