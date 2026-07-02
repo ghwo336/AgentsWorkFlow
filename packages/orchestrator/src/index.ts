@@ -7,6 +7,11 @@ import { clarify, interveneChat } from "./chat.js";
 import { config } from "./config.js";
 import { registerDataRoutes } from "./http-data.js";
 import { resolveApproval, resolveInput, retryRun, startRun } from "./runner.js";
+import { sweepOrphans } from "./startup-sweep.js";
+
+// Before serving anything, close out work orphaned by the previous process —
+// otherwise 'running' steps from a dead build stay running forever in the UI.
+await sweepOrphans();
 
 const app = Fastify({ logger: false });
 await app.register(cors, { origin: true });
