@@ -529,6 +529,8 @@ export class RunPipeline {
       const lastReviewStepId = reviews[reviews.length - 1]?.stepId ?? buildStep.id;
 
       // 💬 each reviewer replies to the builder with its verdict (team chat).
+      // engine attributes the turn to the right teammate (codex→주호·동환,
+      // claude→오유준, system→천성호) now that the fan-out is multi-engine.
       for (const r of reviews) {
         await reporter.chat({
           role: "verify",
@@ -537,6 +539,7 @@ export class RunPipeline {
           toRole: "build",
           stepLabel: tag,
           passed: r.result.passed,
+          engine: r.reviewer.engine,
           text: r.result.reason,
         });
       }

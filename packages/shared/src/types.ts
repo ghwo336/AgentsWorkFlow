@@ -42,6 +42,10 @@ export interface ChatTurn {
   toRole?: ChatRole | null;
   stepLabel?: string | null;
   passed?: boolean | null;
+  // Which reviewer engine spoke (codex | claude | system) — lets the dashboard
+  // attribute a verify turn to the right teammate now that the review fan-out
+  // has multiple engines. Optional for backward compatibility.
+  engine?: string | null;
   text: string;
 }
 

@@ -3,9 +3,11 @@
 // two verifiers share their role; which one shows up for a given step is picked
 // deterministically (by attempt / id hash) so identities stay stable on reload.
 //
-//   기획 (plan)   = Opus   → 호재
-//   개발 (build)  = Sonnet → 태경 · 민재
-//   검증 (verify) = codex  → 주호 · 동환
+//   기획 (plan)   = Opus       → 호재
+//   개발 (build)  = Sonnet     → 태경 · 민재
+//   검증 (verify) = codex      → 주호 · 동환
+//                 = Claude     → 오유준 (런타임·통합 관점 2차 리뷰)
+//                 = 빌드 게이트 → 천성호 (빌드/타입체크 실제 실행, QA)
 //
 // This module is pure data + lookups so both server and client components can
 // use it. How a character is DRAWN lives in agents.tsx (SVG components).
@@ -106,6 +108,32 @@ export const CAST: Agent[] = [
     feature: "mustache",
     laptop: MACBOOK_SPACEGRAY,
   },
+  {
+    id: "yujun",
+    name: "오유준",
+    role: "verify",
+    roleLabel: "검증",
+    engineLabel: "Claude",
+    blurb: "실제로 돌아갈지 배선을 따라가며 살펴요",
+    hair: "#23303f",
+    shirt: "#8fb7ff",
+    accent: "#4a6fb8",
+    feature: "spiky",
+    laptop: MACBOOK_SILVER,
+  },
+  {
+    id: "seongho",
+    name: "천성호",
+    role: "verify",
+    roleLabel: "QA",
+    engineLabel: "빌드·테스트",
+    blurb: "직접 빌드를 돌려서 깨지는지 확인해요",
+    hair: "#4a3b2b",
+    shirt: "#ffd166",
+    accent: "#b8860b",
+    feature: "headset",
+    laptop: MACBOOK_SPACEGRAY,
+  },
 ];
 
 export const SYSTEM_AGENT: Agent = {
@@ -180,16 +208,36 @@ export function membersOf(role: Role): Agent[] {
   return CAST.filter((a) => a.role === role);
 }
 
+// ── Verify seats are ENGINE-specific ────────────────────────────────────────
+// The review fan-out now mixes engines, so a verify span/turn maps to the
+// teammate for its engine (codex rotates between two reviewers by attempt;
+// claude and the build gate are one person each).
+const VERIFY_BY_ENGINE: Record<string, string[]> = {
+  codex: ["juho", "donghwan"],
+  claude: ["yujun"],
+  system: ["seongho"],
+};
+
+function verifyAgent(engineish: string | null | undefined, pick: number): Agent {
+  const key = (engineish ?? "").toLowerCase();
+  const ids = key.includes("claude")
+    ? VERIFY_BY_ENGINE.claude
+    : key === "system" || key.includes("build") || key.includes("test")
+      ? VERIFY_BY_ENGINE.system
+      : VERIFY_BY_ENGINE.codex; // codex + unknown legacy rows
+  return agentById(ids[pick % ids.length]);
+}
+
 // Steps: pick teammate by attempt (a retry hands off to the other person),
 // falling back to an id hash so it stays stable.
 export function agentForStep(step: Step): Agent {
   const role = roleForKind(step.kind);
   if (role === "system") return SYSTEM_AGENT;
+  const pick = step.attempt && step.attempt > 0 ? step.attempt - 1 : hashStr(step.id);
+  if (role === "verify") return verifyAgent(step.engine, pick);
   const members = membersOf(role);
   if (members.length === 1) return members[0];
-  const idx =
-    (step.attempt && step.attempt > 0 ? step.attempt - 1 : hashStr(step.id)) % members.length;
-  return members[idx];
+  return members[pick % members.length];
 }
 
 // Events: keep one stable face per (role, model) so a phase's log lines don't
@@ -202,6 +250,8 @@ export function agentForEvent(ev: {
 }): Agent {
   const role = roleForModel(ev.model, ev.phase);
   if (role === "system") return SYSTEM_AGENT;
+  // Verify log lines carry the reviewer engine in `model` (see pipeline review()).
+  if (role === "verify") return verifyAgent(ev.model, hashStr(`${role}:${ev.model ?? ""}`));
   const members = membersOf(role);
   if (members.length === 1) return members[0];
   return members[hashStr(`${role}:${ev.model ?? ev.phase ?? ""}`) % members.length];
@@ -224,14 +274,16 @@ export const USER_AGENT: Agent = {
 };
 
 // Team-chat turn → character. role+attempt pick the SAME teammate the step
-// avatars use (attempt parity), so 태경/민재·주호/동환 stay consistent.
-export function agentForChat(msg: { role: string; attempt?: number }): Agent {
+// avatars use (attempt parity); verify turns use their engine (codex→주호·동환,
+// claude→오유준, system→천성호) so the chat matches the step nodes.
+export function agentForChat(msg: { role: string; attempt?: number; engine?: string | null }): Agent {
   if (msg.role === "user") return USER_AGENT;
   if (msg.role === "plan") return membersOf("plan")[0] ?? SYSTEM_AGENT;
-  if (msg.role === "build" || msg.role === "verify") {
-    const members = membersOf(msg.role);
+  const a = msg.attempt && msg.attempt > 0 ? msg.attempt - 1 : 0;
+  if (msg.role === "verify") return verifyAgent(msg.engine, a);
+  if (msg.role === "build") {
+    const members = membersOf("build");
     if (members.length === 0) return SYSTEM_AGENT;
-    const a = msg.attempt && msg.attempt > 0 ? msg.attempt - 1 : 0;
     return members[a % members.length];
   }
   return SYSTEM_AGENT;

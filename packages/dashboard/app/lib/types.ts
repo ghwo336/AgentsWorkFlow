@@ -71,6 +71,7 @@ export type ChatMsg = {
   role: string; // plan | build | verify | system | user
   attempt: number;
   kind: string; // build | verify | escalate | guide | commit | note
+  engine?: string | null; // reviewer engine for verify turns (codex | claude | system)
   toRole: string | null;
   stepLabel: string | null;
   passed: boolean | null;

@@ -1,6 +1,8 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { BuildGateReviewer } from "./agents/build-gate.js";
 import { ClaudeBuilder, ClaudePlanner } from "./agents/claude-agent.js";
+import { ClaudeReviewer } from "./agents/claude-reviewer.js";
 import { CodexVerifier } from "./agents/codex-agent.js";
 import { CommandReviewer } from "./agents/command-reviewer.js";
 import type { InterventionDecision } from "@agent-loop/shared/types";
@@ -49,8 +51,13 @@ const store = new RunStore();
 // Reviewer fan-out. Add a reviewer here (another engine, a second code
 // reviewer, a linter) and it shows up as a parallel node — the pipeline is
 // unchanged (OCP). The optional test-runner is enabled by setting TEST_CMD.
+//   codex(주호·동환)  — static plan-compliance + security review
+//   claude(오유준)    — runtime/integration lens, second LLM opinion
+//   build(천성호)     — actually runs the workspace build/typecheck (free, deterministic)
 const reviewers: Reviewer[] = [
   new CodexVerifier(config.verdictSchemaPath, config.codexModel),
+  new ClaudeReviewer(config.reviewModel),
+  new BuildGateReviewer(),
   ...(config.testCmd ? [new CommandReviewer("tests", config.testCmd)] : []),
 ];
 

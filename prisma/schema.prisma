@@ -131,6 +131,7 @@ model ChatMsg {
   role      String // plan | build | verify | system | user (who is speaking)
   attempt   Int      @default(1) // resolves which build/verify teammate (태경 vs 민재 …)
   kind      String // build | verify | escalate | guide | commit | note
+  engine    String? // reviewer engine for verify turns (codex | claude | system)
   toRole    String? // addressee role (for "→ 개발팀" style), if any
   stepLabel String? // "단계 4/7"
   passed    Boolean? // for verify turns: did it pass?

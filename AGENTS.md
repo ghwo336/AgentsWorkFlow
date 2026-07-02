@@ -61,7 +61,10 @@ agent-loop/
 | `pipeline.ts` | `RunPipeline` — plan→approve→build/**review 팬아웃**/commit **상태머신**. 정책만 담고 부수효과는 주입된 추상화로 호출. 단계별 메서드(`plan`/`approve`/`buildVerifyCommit`/`review`)로 분리. 각 국면을 **Step(작업 span)** 으로 방출 |
 | `agents/types.ts` | `Planner` · `Builder` · `Verifier` · `Reviewer` 인터페이스(ISP). 요청/결과 타입 |
 | `agents/claude-agent.ts` | `ClaudePlanner`, `ClaudeBuilder` — Claude Agent SDK 스트리밍 어댑터. `PhaseReporter`(log+usage)만 의존 |
-| `agents/codex-agent.ts` | `CodexVerifier` — `codex exec` 호출 + 토큰/판정 파싱. `Reviewer`(name/kind/engine/model + review) 구현 |
+| `agents/review-policy.ts` | **모든 LLM 리뷰어가 공유하는 판정 규칙서** — 중대 결함 일괄 보고, 범위 게이트, 이전 거절 이력(수렴 규칙), 보안 필수 점검. 리뷰 기준 변경은 여기 한 곳 |
+| `agents/codex-agent.ts` | `CodexVerifier` — `codex exec` 호출 + 토큰/판정 파싱. 정적 계획 준수 + 보안 관점 (주호·동환) |
+| `agents/claude-reviewer.ts` | `ClaudeReviewer` — Claude 2차 리뷰. 런타임·통합(배선이 실제로 동작하나) 관점, codex와 상보적 (오유준) |
+| `agents/build-gate.ts` | `BuildGateReviewer` — 워크스페이스의 빌드/타입체크를 **실제 실행**하는 결정적 QA 게이트. build 스크립트→`npm run build`, tsconfig→`tsc --noEmit`, 둘 다 없으면 통과 (천성호) |
 | `agents/command-reviewer.ts` | `CommandReviewer` — 셸 명령(TEST_CMD) 실행, exit 0 = PASS. 테스트 러너를 리뷰 팬아웃에 합류시키는 `Reviewer` |
 | `approval-gate.ts` | `ApprovalGate` — 사람 승인을 기다리는 async 게이트(runId→resolver) |
 | `reporter.ts` | `PhaseReporter`(log/usage) ⊂ `RunReporter`/`StepHandle`. `DbRunReporter` — runId 바인딩 파사드. `startStep()`→step에 바인딩된 `StepHandle`(log/usage/verdict/finish) |
@@ -150,6 +153,7 @@ npm run dev                  # orchestrator(:4000) + dashboard(:3737) 동시 실
 | `PLAN_MODEL` | `claude-opus-4-8` | 계획 모델 |
 | `BUILD_MODEL` | `claude-sonnet-4-6` | 빌드 모델 |
 | `CODEX_MODEL` | env→`~/.codex/config.toml`→`gpt-5.5` | codex 모델(가격 산정용) |
+| `REVIEW_MODEL` | `claude-sonnet-4-6` | Claude 2차 리뷰어(오유준) 모델 |
 | `MAX_VERIFY_RETRIES` | `3` | 빌드→검증 재시도 상한 |
 | `REVIEW_POLICY` | `all` | 리뷰 팬아웃 커밋 정책. `all`=전원 통과, `any`=하나만 통과해도 커밋 |
 | `TEST_CMD` | — | 설정 시 테스트 러너(`CommandReviewer`)를 리뷰 팬아웃에 추가. 작업 디렉터리에서 실행, exit 0 = PASS |

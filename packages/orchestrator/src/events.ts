@@ -19,6 +19,7 @@ export async function addChat(runId: string, turn: ChatTurn): Promise<void> {
       role: turn.role,
       attempt: turn.attempt,
       kind: turn.kind,
+      engine: turn.engine ?? null,
       toRole: turn.toRole ?? null,
       stepLabel: turn.stepLabel ?? null,
       passed: turn.passed ?? null,

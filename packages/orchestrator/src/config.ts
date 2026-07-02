@@ -32,6 +32,8 @@ export const config = {
   planModel: process.env.PLAN_MODEL ?? "claude-opus-4-8",
   buildModel: process.env.BUILD_MODEL ?? "claude-sonnet-4-6",
   codexModel: resolveCodexModel(),
+  // Second-opinion LLM reviewer (오유준) — runtime/integration lens in the fan-out.
+  reviewModel: process.env.REVIEW_MODEL ?? "claude-sonnet-4-6",
   maxVerifyRetries: Number(process.env.MAX_VERIFY_RETRIES ?? 3),
   verdictSchemaPath: resolve(__dirname, "../verdict.schema.json"),
   // Fan-out review policy: "all" = every reviewer must PASS to commit (default),
