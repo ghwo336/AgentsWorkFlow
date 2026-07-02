@@ -9,7 +9,7 @@
 // cast.ts; this module owns HOW they are drawn (pixel-art SVG components).
 // cast.ts is re-exported so consumers keep one import surface.
 
-import { CAST, ROLE_COLOR, type Agent, type Laptop, type Role } from "./cast";
+import { membersOf, ROLE_COLOR, ROLE_LABEL, type Agent, type Laptop, type Role } from "./cast";
 
 export * from "./cast";
 
@@ -330,15 +330,14 @@ export function AgentChip({ agent, size = 26 }: { agent: Agent; size?: number })
 // and plant, then desk pods grouped by role, each teammate sitting at a
 // workstation whose monitor glows in their role color.
 export function TeamRoster({ activeIds }: { activeIds?: Set<string> } = {}) {
-  // One desk pod per 직책(roleLabel), in CAST order — so 코드 검증 / 통합 검증 /
-  // QA sit as their own teams instead of being lumped under one 검증 pod.
-  // Pod color still comes from the coarse role (verify family shares purple).
-  const groups: { label: string; role: Role; members: Agent[] }[] = [];
-  for (const a of CAST) {
-    const g = groups.find((g) => g.label === a.roleLabel);
-    if (g) g.members.push(a);
-    else groups.push({ label: a.roleLabel, role: a.role, members: [a] });
-  }
+  // Three coarse pods (기획/개발/검증) so the office stays compact — per-person
+  // 직책 (코드 품질/보안 검증/통합 검증/QA) is shown on each card instead of
+  // splitting the verify family into its own pods (which stacked too tall).
+  const groups: { role: Role; members: Agent[] }[] = [
+    { role: "plan", members: membersOf("plan") },
+    { role: "build", members: membersOf("build") },
+    { role: "verify", members: membersOf("verify") },
+  ];
   return (
     <div className="panel office">
       <div className="office-wall">
@@ -354,9 +353,9 @@ export function TeamRoster({ activeIds }: { activeIds?: Set<string> } = {}) {
       </div>
       <div className="office-floor">
         {groups.map((g) => (
-          <div key={g.label} className="desk-pod" style={{ borderLeftColor: ROLE_COLOR[g.role] }}>
+          <div key={g.role} className="desk-pod" style={{ borderLeftColor: ROLE_COLOR[g.role] }}>
             <div className="roster-role" style={{ color: ROLE_COLOR[g.role] }}>
-              {g.label}
+              {ROLE_LABEL[g.role]}
             </div>
             <div className="roster-members">
               {g.members.map((a) => {
@@ -365,15 +364,18 @@ export function TeamRoster({ activeIds }: { activeIds?: Set<string> } = {}) {
                 <div
                   key={a.id}
                   className={`desk-seat${working ? " is-working" : ""}`}
-                  title={working ? `${a.name} — 열일 중 🔥` : a.blurb}
+                  title={working ? `${a.name} — 열일 중 🔥` : `${a.blurb} (${a.engineLabel})`}
                 >
                   <PixelAvatar agent={a} size={40} active={working} />
                   <div className="desk-station">
                     <DeskLaptop laptop={a.laptop} w={62} />
                   </div>
                   <div className="roster-name pixel">{a.name}</div>
-                  {/* 파드 제목이 직책이니 카드에는 엔진만 */}
-                  <div className="roster-engine muted small">{a.engineLabel}</div>
+                  {/* 카드에는 그 사람의 직책. 파드 제목과 같은 직책(기획/개발)이면
+                      대신 엔진을 보여줘 정보가 중복되지 않게. 엔진은 툴팁에도 있음. */}
+                  <div className="roster-engine muted small">
+                    {a.roleLabel === ROLE_LABEL[a.role] ? a.engineLabel : a.roleLabel}
+                  </div>
                 </div>
                 );
               })}
