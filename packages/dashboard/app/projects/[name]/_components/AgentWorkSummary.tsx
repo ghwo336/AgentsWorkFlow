@@ -4,7 +4,7 @@ import { useState } from "react";
 import { agentForStep, PixelAvatar, ROLE_COLOR } from "../../../lib/agents";
 import { Markdown } from "../../../lib/Markdown";
 import type { Step } from "../../../lib/types";
-import { stepOutcome } from "../_plan-steps";
+import { fmtClock, fmtDur, stepOutcome } from "../_plan-steps";
 
 type SummaryFilter = "all" | "done" | "error";
 
@@ -138,9 +138,19 @@ function SummaryItem({
             </span>
           </div>
         </div>
-        <span className={`badge step-${outcome.tone}`} style={{ whiteSpace: "nowrap" }}>
-          {outcome.icon} {outcome.label}
-        </span>
+        <div style={{ textAlign: "right", flex: "0 0 auto" }}>
+          <span className={`badge step-${outcome.tone}`} style={{ whiteSpace: "nowrap" }}>
+            {outcome.icon} {outcome.label}
+          </span>
+          {/* Finished → completion time + how long it took; running → start time. */}
+          <div className="muted small" style={{ marginTop: 4 }}>
+            {step.endedAt
+              ? `${fmtClock(step.endedAt)} 완료 · ${fmtDur(
+                  new Date(step.endedAt).getTime() - new Date(step.startedAt).getTime()
+                )}`
+              : `${fmtClock(step.startedAt)} 시작`}
+          </div>
+        </div>
       </div>
       <div className="agent-summary-body">
         <span className="muted small">{bodyLabel} · </span>

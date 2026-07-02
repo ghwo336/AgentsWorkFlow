@@ -76,6 +76,21 @@ export function groupByPlanStep(steps: Step[]): StepGroup[] {
 
 export type Tone = "passed" | "failed" | "running" | "pending";
 
+// "14:51" for today, "7/1 14:51" for older — compact card/pill timestamps.
+export function fmtClock(iso: string): string {
+  const d = new Date(iso);
+  const hm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return d.toDateString() === new Date().toDateString() ? hm : `${d.getMonth() + 1}/${d.getDate()} ${hm}`;
+}
+
+export function fmtDur(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const s = ms / 1000;
+  if (s < 60) return `${s.toFixed(1)}s`;
+  const m = Math.floor(s / 60);
+  return `${m}m ${Math.round(s % 60)}s`;
+}
+
 export function toneFor(status: string): Tone {
   if (status === "passed") return "passed";
   if (status === "failed") return "failed";

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { Step } from "../../lib/types";
 import { agentForStep, PixelAvatar, ROLE_COLOR } from "../../lib/agents";
+import { fmtDur } from "./_plan-steps";
 
 // ── Shared step vocabulary (colors / icons / formatting) ────────────────────
 const STATUS_COLOR: Record<string, string> = {
@@ -30,13 +31,6 @@ function kindIcon(k: string): string {
 
 function endMs(step: Step, now: number): number {
   return step.endedAt ? new Date(step.endedAt).getTime() : now;
-}
-function fmtDur(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  const s = ms / 1000;
-  if (s < 60) return `${s.toFixed(1)}s`;
-  const m = Math.floor(s / 60);
-  return `${m}m ${Math.round(s % 60)}s`;
 }
 
 // ── Tabbed container ────────────────────────────────────────────────────────
