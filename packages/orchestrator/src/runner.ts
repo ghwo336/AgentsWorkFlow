@@ -158,3 +158,18 @@ export async function resolveInput(
   pipeline.resumeFromInput(runId, reporter, decision).catch(onFatal(reporter));
   return true;
 }
+
+// Re-open a run that ended (rejected/failed) or is parked (needs_input) and
+// continue the build from where it stopped — pipeline.build resumes at the first
+// not-yet-committed step, now with the full retry + 호재 escalation ladder. Needs
+// an approved plan to resume; returns false (→ 409) otherwise.
+const RESUMABLE = new Set(["rejected", "failed", "needs_input"]);
+export async function retryRun(runId: string): Promise<boolean> {
+  const st = await store.getResumeState(runId);
+  if (!st || !RESUMABLE.has(st.status) || !st.targetDir || !st.plan) return false;
+  const reporter = new DbRunReporter(runId);
+  await reporter.log("approval", "사용자가 작업을 다시 진행합니다 — 멈춘 지점부터 재개합니다.");
+  await reporter.status("building");
+  pipeline.build(runId, reporter).catch(onFatal(reporter));
+  return true;
+}

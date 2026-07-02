@@ -3,7 +3,7 @@
 
 // Cross-package vocabulary lives in @agent-loop/shared — re-exported here so
 // client code keeps a single import surface for its types.
-export type { InterventionDecision } from "@agent-loop/shared/types";
+export type { InterventionDecision, ChatRole, ChatKind } from "@agent-loop/shared/types";
 
 export type ProjectSummary = {
   name: string;
@@ -64,7 +64,26 @@ export type Step = {
   orderIdx: number;
 };
 
-export type RunDetail = Run & { events: RunEvent[]; verdicts: unknown[]; steps: Step[] };
+// One turn in a run's agent team chat (build/verify/escalate/guide/commit).
+// role+attempt resolve to the same pixel character the step avatars use.
+export type ChatMsg = {
+  id: string;
+  role: string; // plan | build | verify | system | user
+  attempt: number;
+  kind: string; // build | verify | escalate | guide | commit | note
+  toRole: string | null;
+  stepLabel: string | null;
+  passed: boolean | null;
+  text: string;
+  ts: string;
+};
+
+export type RunDetail = Run & {
+  events: RunEvent[];
+  verdicts: unknown[];
+  steps: Step[];
+  chatMsgs: ChatMsg[];
+};
 
 // One turn in the pre-plan requirements chat (client-held history).
 export type ChatMessage = { role: "user" | "assistant"; content: string };

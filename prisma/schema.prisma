@@ -35,6 +35,7 @@ model Run {
   verdicts Verdict[]
   usages   Usage[]
   steps    Step[]
+  chatMsgs ChatMsg[]
 
   @@index([project])
 }
@@ -117,4 +118,24 @@ model Verdict {
 
   @@index([runId])
   @@index([stepId])
+}
+
+/// Team chat: the agents' conversation as they work a step (구현→검증→구현 loop,
+/// 호재 escalation, user guidance). Derived from each agent's real output so the
+/// user can watch them talk it through. `role`+`attempt` resolve to the same
+/// pixel character the step avatars use.
+model ChatMsg {
+  id        String   @id @default(cuid())
+  runId     String
+  run       Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  role      String // plan | build | verify | system | user (who is speaking)
+  attempt   Int      @default(1) // resolves which build/verify teammate (태경 vs 민재 …)
+  kind      String // build | verify | escalate | guide | commit | note
+  toRole    String? // addressee role (for "→ 개발팀" style), if any
+  stepLabel String? // "단계 4/7"
+  passed    Boolean? // for verify turns: did it pass?
+  text      String
+  ts        DateTime @default(now())
+
+  @@index([runId])
 }

@@ -3,10 +3,10 @@ import Fastify from "fastify";
 import { z } from "zod";
 import { prisma } from "@agent-loop/shared/db";
 import { bus } from "./bus.js";
-import { clarify } from "./chat.js";
+import { clarify, interveneChat } from "./chat.js";
 import { config } from "./config.js";
 import { registerDataRoutes } from "./http-data.js";
-import { resolveApproval, resolveInput, startRun } from "./runner.js";
+import { resolveApproval, resolveInput, retryRun, startRun } from "./runner.js";
 
 const app = Fastify({ logger: false });
 await app.register(cors, { origin: true });
@@ -70,6 +70,65 @@ app.post("/runs/:id/resume", async (req, reply) => {
   const ok = await resolveInput(id, parsed.data);
   if (!ok) {
     return reply.code(409).send({ error: "No run awaiting input with that id." });
+  }
+  return { ok: true };
+});
+
+// Talk to 호재(Opus) about a stuck (needs_input) run before deciding. Stateless:
+// the client sends the whole thread; we seed 호재 with the run's stuck context.
+app.post("/runs/:id/intervene-chat", async (req, reply) => {
+  const { id } = req.params as { id: string };
+  const parsed = ChatSchema.safeParse(req.body);
+  if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
+
+  const run = await prisma.run.findUnique({ where: { id } });
+  if (!run) return reply.code(404).send({ error: "not found" });
+
+  // Which plan step is stuck = number of already-resolved (passed/skipped) commits.
+  let steps: string[] = [];
+  try {
+    const arr = run.planSteps ? JSON.parse(run.planSteps) : [];
+    if (Array.isArray(arr)) steps = arr.map((s) => String(s));
+  } catch {
+    /* ignore */
+  }
+  const resolved = await prisma.step.count({
+    where: { runId: id, kind: "commit", status: { in: ["passed", "skipped"] } },
+  });
+  const stuckIdx = Math.min(resolved, Math.max(0, steps.length - 1));
+  const recentFails = await prisma.verdict.findMany({
+    where: { runId: id, passed: false },
+    orderBy: { ts: "desc" },
+    take: 3,
+  });
+
+  const context = [
+    `## 승인된 계획\n${(run.plan ?? "(없음)").slice(0, 4000)}`,
+    steps.length
+      ? `## 막힌 단계 (${stuckIdx + 1}/${steps.length})\n${steps[stuckIdx] ?? "(알 수 없음)"}`
+      : "",
+    run.error ? `## 중단 사유\n${run.error}` : "",
+    recentFails.length
+      ? `## 최근 검증 실패 사유\n${recentFails.map((v, i) => `${i + 1}. ${v.reason}`).join("\n\n")}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  try {
+    const text = await interveneChat(context, parsed.data.messages);
+    return { reply: text };
+  } catch (err) {
+    return reply.code(502).send({ error: (err as Error)?.message ?? "chat failed" });
+  }
+});
+
+// Re-run a stopped run (rejected/failed/needs_input) from where it left off.
+app.post("/runs/:id/retry", async (req, reply) => {
+  const { id } = req.params as { id: string };
+  const ok = await retryRun(id);
+  if (!ok) {
+    return reply.code(409).send({ error: "Run is not resumable (no approved plan or wrong status)." });
   }
   return { ok: true };
 });

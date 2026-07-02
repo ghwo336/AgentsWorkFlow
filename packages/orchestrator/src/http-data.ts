@@ -27,6 +27,7 @@ export function registerDataRoutes(app: FastifyInstance): void {
         events: { orderBy: { ts: "asc" } },
         verdicts: { orderBy: { ts: "asc" } },
         steps: { orderBy: [{ orderIdx: "asc" }, { startedAt: "asc" }] },
+        chatMsgs: { orderBy: { ts: "asc" } },
       },
     });
     if (!run) return reply.code(404).send({ error: "not found" });

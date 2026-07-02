@@ -1,6 +1,7 @@
 import { prisma } from "@agent-loop/shared/db";
 import { costUsd } from "@agent-loop/shared/pricing";
 import type {
+  ChatTurn,
   Phase,
   RunStatus,
   StepKind,
@@ -8,6 +9,24 @@ import type {
   UsageRecord,
 } from "@agent-loop/shared/types";
 import { bus } from "./bus.js";
+
+// Append a team-chat turn: persist to DB + broadcast so the dashboard's chat
+// panel updates live (any runId event triggers a detail reload).
+export async function addChat(runId: string, turn: ChatTurn): Promise<void> {
+  await prisma.chatMsg.create({
+    data: {
+      runId,
+      role: turn.role,
+      attempt: turn.attempt,
+      kind: turn.kind,
+      toRole: turn.toRole ?? null,
+      stepLabel: turn.stepLabel ?? null,
+      passed: turn.passed ?? null,
+      text: turn.text,
+    },
+  });
+  bus.publish({ type: "chat", runId, ts: new Date().toISOString() });
+}
 
 // Append a timeline event: persist to DB + broadcast over SSE.
 export async function logEvent(

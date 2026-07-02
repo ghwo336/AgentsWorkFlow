@@ -3,6 +3,7 @@
 // "./_components"; the pure step-derivation logic they render lives in
 // ../_plan-steps.ts.
 
+export { AgentChat } from "./AgentChat";
 export { AgentWorkSummary } from "./AgentWorkSummary";
 export { ApprovalPanel } from "./ApprovalPanel";
 export { InterventionPanel } from "./InterventionPanel";
@@ -12,4 +13,5 @@ export { ProjectSettings } from "./ProjectSettings";
 export { RepoPicker } from "./RepoPicker";
 export { RunDetailCard, RunList } from "./RunList";
 export { RunProgress } from "./RunProgress";
+export { ResumePanel } from "./ResumePanel";
 export { StatusBadge } from "./StatusBadge";

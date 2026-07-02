@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../../lib/api";
 import { useOrchestratorEvents } from "../../lib/useOrchestratorEvents";
-import type { InterventionDecision, Run, RunDetail, StartRunInput } from "../../lib/types";
+import type { ChatMessage, InterventionDecision, Run, RunDetail, StartRunInput } from "../../lib/types";
 
 // Container logic for one project's workspace: owns the run list + selected
 // detail, keeps them live over SSE, and exposes the start/decide actions.
@@ -171,6 +171,29 @@ export function useWorkspace(project: string) {
     [detail, loadDetail, fail]
   );
 
+  // Re-run a stopped run (rejected/failed) from where it left off.
+  const retry = useCallback(async () => {
+    if (!detail) return;
+    try {
+      await api.retry(detail.id);
+      setError(null);
+      loadDetail(detail.id);
+    } catch (err) {
+      fail(err, "다시 진행 요청 실패", true);
+    }
+  }, [detail, loadDetail, fail]);
+
+  // Discuss a stuck run with 호재(Opus) before deciding. Stateless — returns the
+  // reply; the panel owns the thread state.
+  const interveneChat = useCallback(
+    async (messages: ChatMessage[]): Promise<string> => {
+      if (!detail) return "";
+      const { reply } = await api.interveneChat(detail.id, messages);
+      return reply;
+    },
+    [detail]
+  );
+
   return {
     runs,
     selected,
@@ -181,6 +204,8 @@ export function useWorkspace(project: string) {
     decide,
     revise,
     intervene,
+    interveneChat,
+    retry,
     defaultTargetDir,
     saveProjectDir,
     repos,

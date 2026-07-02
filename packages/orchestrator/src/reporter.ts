@@ -1,5 +1,6 @@
-import type { Phase, RunStatus, StepStatus, UsageRecord } from "@agent-loop/shared/types";
+import type { ChatTurn, Phase, RunStatus, StepStatus, UsageRecord } from "@agent-loop/shared/types";
 import {
+  addChat,
   createStep,
   logEvent,
   recordUsage,
@@ -36,6 +37,7 @@ export interface RunReporter extends PhaseReporter {
   status(status: RunStatus, extra?: StatusExtra): Promise<void>;
   verdict(attempt: number, passed: boolean, reason: string, diff?: string, raw?: string): Promise<void>;
   startStep(input: CreateStepInput): Promise<StepHandle>;
+  chat(turn: ChatTurn): Promise<void>;
 }
 
 // DB-backed implementation: delegates to the events module (persist + SSE).
@@ -53,6 +55,9 @@ export class DbRunReporter implements RunReporter {
   }
   verdict(attempt: number, passed: boolean, reason: string, diff?: string, raw?: string) {
     return recordVerdict(this.runId, attempt, passed, reason, diff, raw);
+  }
+  chat(turn: ChatTurn) {
+    return addChat(this.runId, turn);
   }
   async startStep(input: CreateStepInput): Promise<StepHandle> {
     const runId = this.runId;

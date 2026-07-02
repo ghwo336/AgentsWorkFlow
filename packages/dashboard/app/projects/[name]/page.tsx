@@ -2,12 +2,14 @@
 
 import { useParams } from "next/navigation";
 import {
+  AgentChat,
   AgentWorkSummary,
   ApprovalPanel,
   InterventionPanel,
   LiveLog,
   NewTaskForm,
   ProjectSettings,
+  ResumePanel,
   RunDetailCard,
   RunList,
   RunProgress,
@@ -30,6 +32,8 @@ export default function ProjectWorkspace() {
     decide,
     revise,
     intervene,
+    interveneChat,
+    retry,
     defaultTargetDir,
     saveProjectDir,
     repos,
@@ -91,12 +95,17 @@ export default function ProjectWorkspace() {
               {detail.status === "needs_input" && (
                 <InterventionPanel
                   reason={detail.error}
+                  onChat={(messages) => interveneChat(messages)}
                   onGuide={(feedback) => intervene({ action: "guide", feedback })}
                   onCommit={() => intervene({ action: "commit" })}
                   onSkip={() => intervene({ action: "skip" })}
                   onAbort={() => intervene({ action: "abort" })}
                 />
               )}
+              {(detail.status === "rejected" || detail.status === "failed") && (
+                <ResumePanel reason={detail.error} onRetry={() => retry()} />
+              )}
+              <AgentChat msgs={detail.chatMsgs ?? []} />
               <AgentWorkSummary
                 steps={detail.steps}
                 status={detail.status}

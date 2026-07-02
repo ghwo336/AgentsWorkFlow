@@ -89,4 +89,17 @@ export const api = {
   // as-is) / skip (drop this step) / abort (stop the run).
   resume: (id: string, decision: InterventionDecision) =>
     postJson<unknown>(`/api/orchestrator/runs/${id}/resume`, decision, "재개 요청 실패"),
+
+  // Re-run a stopped run (rejected/failed/needs_input) from where it left off.
+  retry: (id: string) =>
+    postJson<unknown>(`/api/orchestrator/runs/${id}/retry`, {}, "다시 진행 요청 실패"),
+
+  // Discuss a stuck (needs_input) run with 호재(Opus) before deciding. Stateless:
+  // send the whole thread, get 호재's next reply (seeded with the stuck context).
+  interveneChat: (id: string, messages: ChatMessage[]) =>
+    postJson<{ reply: string }>(
+      `/api/orchestrator/runs/${id}/intervene-chat`,
+      { messages },
+      "호재와 대화 요청 실패"
+    ),
 };

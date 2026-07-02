@@ -206,3 +206,33 @@ export function agentForEvent(ev: {
   if (members.length === 1) return members[0];
   return members[hashStr(`${role}:${ev.model ?? ev.phase ?? ""}`) % members.length];
 }
+
+// The user (team leader) as a chat participant — the human at the needs_input
+// gate. Not part of the CAST; styled as its own character.
+export const USER_AGENT: Agent = {
+  id: "leader",
+  name: "리더(나)",
+  role: "system",
+  roleLabel: "팀 리더",
+  engineLabel: "사용자",
+  blurb: "최종 결정을 내려요",
+  hair: "#3a2f2a",
+  shirt: "#e6b566",
+  accent: "#b07d33",
+  feature: "none",
+  laptop: SYSTEM_AGENT.laptop,
+};
+
+// Team-chat turn → character. role+attempt pick the SAME teammate the step
+// avatars use (attempt parity), so 태경/민재·주호/동환 stay consistent.
+export function agentForChat(msg: { role: string; attempt?: number }): Agent {
+  if (msg.role === "user") return USER_AGENT;
+  if (msg.role === "plan") return membersOf("plan")[0] ?? SYSTEM_AGENT;
+  if (msg.role === "build" || msg.role === "verify") {
+    const members = membersOf(msg.role);
+    if (members.length === 0) return SYSTEM_AGENT;
+    const a = msg.attempt && msg.attempt > 0 ? msg.attempt - 1 : 0;
+    return members[a % members.length];
+  }
+  return SYSTEM_AGENT;
+}

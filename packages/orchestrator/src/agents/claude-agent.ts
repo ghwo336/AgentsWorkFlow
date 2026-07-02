@@ -336,7 +336,14 @@ export class ClaudeBuilder implements Builder {
       completedBlock,
       currentBlock,
       req.feedback
-        ? `# Verifier feedback from the previous attempt (MUST be fixed)\n${req.feedback}`
+        ? [
+            `# 검증자/리드의 지적 — 반드시 이번에 모두 해결 (MUST fix ALL)`,
+            req.feedback,
+            ``,
+            `위 지적을 하나도 빠짐없이 처리하세요. 각 지적에 대해 실제로 코드를 고치고,`,
+            `요약에 "지적 N → 어떻게 고쳤는지"를 항목별로 적으세요. 지적과 무관한 다른`,
+            `작업(예: 타입 오류만 손보기)으로 회피하지 말고, 지적된 근본 문제를 직접 고치세요.`,
+          ].join("\n")
         : "",
       closing,
     ]

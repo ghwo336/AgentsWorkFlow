@@ -126,6 +126,31 @@ textarea:focus, input:focus, select:focus { outline: none; border-color: var(--a
    its own paragraphs) — reset it so paragraph spacing isn't doubled. */
 .chat-bubble .md { white-space: normal; }
 
+/* 에이전트 대화방 — the team's build/verify/escalate/guide conversation, read
+   top-to-bottom. Each turn: avatar + speaker + kind tag + text. */
+.agent-chat { display: flex; flex-direction: column; gap: 2px; max-height: 460px; overflow-y: auto; }
+.chat-step-sep {
+  font-family: var(--pixel); font-size: 10px; color: var(--muted);
+  text-align: center; margin: 12px 0 6px; padding-top: 8px; border-top: 1px dashed var(--border);
+}
+.chat-turn { display: flex; gap: 10px; padding: 8px; border-radius: 8px; border-left: 3px solid var(--border); }
+.chat-turn.chat-fail { background: rgba(255, 107, 125, .07); border-left-color: var(--red); }
+.chat-turn.chat-pass { background: rgba(87, 217, 154, .06); border-left-color: var(--green); }
+.chat-turn.chat-lead { background: rgba(91, 157, 255, .08); border-left-color: var(--accent); }
+.chat-turn.chat-guide { background: rgba(255, 200, 97, .08); border-left-color: var(--yellow); }
+.chat-turn-avatar { flex: 0 0 auto; }
+.chat-turn-body { min-width: 0; flex: 1; }
+.chat-turn-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 3px; }
+.chat-kind {
+  font-size: 10px; padding: 1px 6px; border-radius: 999px;
+  background: var(--panel); border: 1px solid var(--border); color: var(--muted);
+}
+.chat-verdict { font-size: 10px; padding: 1px 6px; border-radius: 999px; font-weight: 700; }
+.chat-verdict.fail { color: var(--red); border: 1px solid var(--red); }
+.chat-verdict.pass { color: var(--green); border: 1px solid var(--green); }
+.chat-turn-text { font-size: 12.5px; line-height: 1.5; word-break: break-word; }
+.chat-turn-text .md { white-space: normal; }
+
 /* Rendered plan in the approval panel — a read-only preview box styled like the
    textarea it replaces (same height/scroll), so preview↔edit doesn't jump. */
 .plan-preview {

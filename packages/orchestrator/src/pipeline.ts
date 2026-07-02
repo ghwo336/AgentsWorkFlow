@@ -131,6 +131,14 @@ export class RunPipeline {
 
     if (decision.action === "guide") {
       await reporter.log("approval", `사용자 지침: ${decision.feedback}`);
+      await reporter.chat({
+        role: "user",
+        attempt: 1,
+        kind: "guide",
+        toRole: "build",
+        stepLabel: stuckTag,
+        text: decision.feedback,
+      });
       await reporter.status("building");
       const seed = `# 사용자(팀 리더)의 지침 — 반드시 따르세요\n${decision.feedback}`;
       await continueFrom(stuckIdx, parent, seed);
@@ -400,6 +408,15 @@ export class RunPipeline {
       res.text?.trim() ||
       "이전 실패 원인을 근본적으로 다시 점검하고, 검증자의 지적을 정확히 해결하세요.";
     await step.finish(res.isError ? "failed" : "passed", compactAgentSummary(guidance, "해결책을 제시했습니다."));
+    // 💬 호재 drops into the chat with the fix plan for the builders.
+    await reporter.chat({
+      role: "plan",
+      attempt: this.deps.config.maxVerifyRetries,
+      kind: "escalate",
+      toRole: "build",
+      stepLabel: `단계 ${ctx.index}/${ctx.total}`,
+      text: guidance,
+    });
     return { guidance, stepId: step.id };
   }
 
@@ -470,10 +487,17 @@ export class RunPipeline {
         parentId = buildStep.id;
         continue;
       }
-      await buildStep.finish(
-        "passed",
-        compactAgentSummary(buildResult.text, `${tag}를 구현했습니다.`)
-      );
+      const buildSummary = compactAgentSummary(buildResult.text, `${tag}를 구현했습니다.`);
+      await buildStep.finish("passed", buildSummary);
+      // 💬 builder tells the verifiers what it did (team chat).
+      await reporter.chat({
+        role: "build",
+        attempt,
+        kind: "build",
+        toRole: "verify",
+        stepLabel: tag,
+        text: buildSummary,
+      });
 
       // ③ VERIFY — codex reviews THIS step's uncommitted diff (previous steps
       // are already committed, so the diff is exactly this step's changes).
@@ -496,6 +520,19 @@ export class RunPipeline {
           : reviews.every((r) => r.result.passed));
       const lastReviewStepId = reviews[reviews.length - 1]?.stepId ?? buildStep.id;
 
+      // 💬 each reviewer replies to the builder with its verdict (team chat).
+      for (const r of reviews) {
+        await reporter.chat({
+          role: "verify",
+          attempt,
+          kind: "verify",
+          toRole: "build",
+          stepLabel: tag,
+          passed: r.result.passed,
+          text: r.result.reason,
+        });
+      }
+
       // ④ COMMIT this step (on PASS) and move on.
       if (passed) {
         const commitStep = await reporter.startStep({
@@ -514,6 +551,13 @@ export class RunPipeline {
           "commit",
           `${tag} 커밋 ${sha.slice(0, 10)} ✅ (${reviewerNames} 통과, ${attempt}번째 시도)`
         );
+        await reporter.chat({
+          role: "system",
+          attempt,
+          kind: "commit",
+          stepLabel: tag,
+          text: `${reviewerNames} 통과 → ${sha.slice(0, 10)} 커밋 완료.`,
+        });
         return { passed: true, lastStepId: commitStep.id, sha, failures };
       }
 

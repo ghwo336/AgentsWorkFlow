@@ -28,8 +28,25 @@ export type StepStatus = "pending" | "running" | "passed" | "failed" | "skipped"
 // Server-Sent Event payload broadcast on every state change / log line.
 // `step` events carry the step-specific fields; older consumers can ignore
 // them since every added field is optional.
+// Who is speaking + what kind of turn it is in the team chat.
+export type ChatRole = "plan" | "build" | "verify" | "system" | "user";
+export type ChatKind = "build" | "verify" | "escalate" | "guide" | "commit" | "note";
+
+// One turn in a run's agent conversation (구현→검증→구현 loop + 호재 escalation +
+// user guidance). Persisted (ChatMsg) and broadcast; role+attempt resolve to the
+// same pixel character the step avatars use.
+export interface ChatTurn {
+  role: ChatRole;
+  attempt: number;
+  kind: ChatKind;
+  toRole?: ChatRole | null;
+  stepLabel?: string | null;
+  passed?: boolean | null;
+  text: string;
+}
+
 export interface BusEvent {
-  type: "event" | "verdict" | "status" | "run" | "step";
+  type: "event" | "verdict" | "status" | "run" | "step" | "chat";
   runId: string;
   phase?: Phase;
   level?: "info" | "warn" | "error";
