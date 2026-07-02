@@ -35,6 +35,12 @@ export interface VerifyRequest {
   cwd: string;
   plan: string;
   diff: string;
+  // Convergence context: which verify attempt this is for the current step and
+  // what earlier attempts were rejected for. Reviewers use it to (a) check the
+  // flagged defects are actually fixed and (b) stop surfacing brand-new minor
+  // findings round after round (the whack-a-mole loop that burns retries).
+  attempt?: number; // 1-based, global across rounds
+  previousFailures?: string[]; // one entry per earlier rejected attempt
 }
 
 // Escalation: when a step keeps failing verification, the lead (호재/Opus) is

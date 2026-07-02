@@ -57,8 +57,21 @@ function runCodex(
 
 const REVIEWER_PROMPT_HEADER = [
   "You are a strict code reviewer in an automated dev loop.",
-  "Decide whether the DIFF correctly and completely implements the PLAN and is safe to commit.",
-  "FAIL if there are bugs, missing pieces, security issues, or deviations from the plan.",
+  "Decide whether the DIFF correctly and completely implements the PLAN's CURRENT",
+  "STEP and is safe to commit.",
+  "",
+  "VERDICT POLICY — strict on defects, but CONVERGE (this loop has limited retries):",
+  "- FAIL only for MATERIAL defects: the current step's required behavior is broken",
+  "  or missing, the change doesn't compile/run, or there is a security issue.",
+  "- Report EVERY material defect you can find in THIS single review, ordered by",
+  "  severity. Never reveal problems one at a time across attempts — anything you",
+  "  don't report now you forfeit the right to fail for later.",
+  "- Do NOT FAIL for: style/naming preferences, refactor ideas, micro-optimizations,",
+  "  or robustness hardening BEYOND what the plan's current step asks for (ideal DB",
+  "  constraints, theoretical race conditions, exhaustive edge cases the plan never",
+  "  mentioned). Put those in `reason` prefixed with '제안:' and still PASS.",
+  "- A later step in the PLAN may cover a concern (tests, UI, polish) — do not fail",
+  "  the current step for work the plan assigns to a later step.",
   "",
   "SECURITY REVIEW IS MANDATORY — you MUST audit the DIFF for security problems on",
   "EVERY review, regardless of what the PLAN asks for. A change that implements the",
@@ -81,12 +94,39 @@ const REVIEWER_PROMPT_HEADER = [
   "Keep code, identifiers, and file paths in their original form.",
 ];
 
-function buildReviewPrompt(plan: string, diff: string): string {
+// Rejection history block: on retries the reviewer's first job is to check the
+// previously-flagged defects are fixed — not to find a fresh nitpick each round
+// (the whack-a-mole pattern that exhausted every retry on real runs).
+function previousFailuresBlock(attempt?: number, previousFailures?: string[]): string[] {
+  if (!previousFailures?.length) return [];
+  const recent = previousFailures.slice(-3).map(
+    (f, i) =>
+      `--- 이전 거절 ${previousFailures.length - Math.min(3, previousFailures.length) + i + 1} ---\n${f.slice(0, 1500)}`
+  );
+  return [
+    "",
+    `=== PREVIOUS REJECTIONS (this is attempt ${attempt ?? previousFailures.length + 1} for this step) ===`,
+    "The builder has already been rejected for the reasons below and has attempted fixes.",
+    ...recent,
+    "",
+    "FIRST verify each previously-flagged defect above is actually fixed in the DIFF",
+    "(state the result per item in `reason`). If all are fixed and the diff introduces",
+    "no NEW material defect, PASS. Surfacing a brand-new minor concern at this stage",
+    "instead of converging is a review failure on your part.",
+  ];
+}
+
+function buildReviewPrompt(
+  plan: string,
+  diff: string,
+  opts: { attempt?: number; previousFailures?: string[] } = {}
+): string {
   return [
     ...REVIEWER_PROMPT_HEADER,
     "",
     "=== PLAN ===",
     plan,
+    ...previousFailuresBlock(opts.attempt, opts.previousFailures),
     "",
     "=== DIFF (uncommitted changes) ===",
     diff || "(no changes)",
@@ -96,15 +136,13 @@ function buildReviewPrompt(plan: string, diff: string): string {
 // Run codex (read-only sandbox) as a strict reviewer over the supplied diff,
 // forcing a structured {verdict, reason} response via --output-schema.
 // Auth is the user's ChatGPT subscription (codex login) — no API billing.
-async function runCodexVerify(
-  cwd: string,
-  plan: string,
-  diff: string,
-  schemaPath: string
-): Promise<VerifyResult> {
+async function runCodexVerify(req: VerifyRequest, schemaPath: string): Promise<VerifyResult> {
   const tmp = await mkdtemp(join(tmpdir(), "agentloop-codex-"));
   const lastMsgPath = join(tmp, "verdict.json");
-  const prompt = buildReviewPrompt(plan, diff);
+  const prompt = buildReviewPrompt(req.plan, req.diff, {
+    attempt: req.attempt,
+    previousFailures: req.previousFailures,
+  });
 
   try {
     const { stdout, stderr } = await runCodex(
@@ -120,7 +158,7 @@ async function runCodexVerify(
         lastMsgPath,
         prompt,
       ],
-      { cwd, maxBuffer: 64 * 1024 * 1024, timeoutMs: 15 * 60 * 1000 }
+      { cwd: req.cwd, maxBuffer: 64 * 1024 * 1024, timeoutMs: 15 * 60 * 1000 }
     );
 
     const usage = parseCodexUsage(stdout);
@@ -215,7 +253,7 @@ export class CodexVerifier implements Verifier, Reviewer {
   constructor(private readonly schemaPath: string, readonly model: string = "gpt-5.5") {}
 
   verify(req: VerifyRequest): Promise<VerifyResult> {
-    return runCodexVerify(req.cwd, req.plan, req.diff, this.schemaPath);
+    return runCodexVerify(req, this.schemaPath);
   }
   review(req: VerifyRequest): Promise<VerifyResult> {
     return this.verify(req);

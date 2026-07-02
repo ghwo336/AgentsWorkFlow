@@ -219,6 +219,10 @@ At the VERY END of your message, append a machine-readable step list: a fenced
 self-contained implementation step that a builder agent can execute and a
 reviewer can verify on its own. Split the work into meaningful units (NOT one
 file per step) — aim for 3–8 ordered steps, each building on the previous.
+SIZE RULE: one step = one reviewable diff. If a step would touch many routes/
+modules at once (e.g. "구현 all API endpoints"), split it — oversized steps make
+review feedback loop endlessly. Also write each step's ACCEPTANCE clearly enough
+in the description that a reviewer can judge pass/fail without guessing extras.
 Write each step description in Korean (code/paths/identifiers stay as-is).
 Example:
 
@@ -343,6 +347,10 @@ export class ClaudeBuilder implements Builder {
             `위 지적을 하나도 빠짐없이 처리하세요. 각 지적에 대해 실제로 코드를 고치고,`,
             `요약에 "지적 N → 어떻게 고쳤는지"를 항목별로 적으세요. 지적과 무관한 다른`,
             `작업(예: 타입 오류만 손보기)으로 회피하지 말고, 지적된 근본 문제를 직접 고치세요.`,
+            `그리고 마무리 전에 SAME-CLASS 스캔: 지적된 것과 같은 종류의 문제(예: 한 필드의`,
+            `타입 검증 누락이 지적됐다면 다른 모든 입력 필드도)가 이 단계의 다른 코드에 남아`,
+            `있지 않은지 스스로 훑어서 함께 고치세요. 리뷰어가 다음 라운드에 찾을 것을 먼저 없애야`,
+            `재시도 루프가 끝납니다.`,
           ].join("\n")
         : "",
       closing,

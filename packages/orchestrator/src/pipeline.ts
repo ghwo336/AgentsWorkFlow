@@ -343,10 +343,15 @@ export class RunPipeline {
     // concrete guidance for the next round.
     const escal = await this.escalate(ctx, r1);
 
-    // Round 2 — same builders, now following the lead's fix plan.
+    // Round 2 — same builders, now following the lead's fix plan. Reviewers get
+    // round 1's rejections as history so they converge instead of re-litigating.
     const r2 = await this.runStepRound(
       { ...ctx, parentId: escal.stepId },
-      { seedFeedback: escal.guidance, attemptOffset: config.maxVerifyRetries }
+      {
+        seedFeedback: escal.guidance,
+        attemptOffset: config.maxVerifyRetries,
+        previousFailures: r1.failures,
+      }
     );
     if (r2.passed) return r2;
 
@@ -437,14 +442,16 @@ export class RunPipeline {
       total: number;
       completed: string[];
     },
-    opts: { seedFeedback?: string; attemptOffset: number }
+    opts: { seedFeedback?: string; attemptOffset: number; previousFailures?: string[] }
   ): Promise<{ passed: boolean; lastStepId: string; sha: string; feedback?: string; failures: string[] }> {
     const { builder, reviewers, git, store, config } = this.deps;
     const { reporter, targetDir, order } = ctx;
     const tag = `단계 ${ctx.index}/${ctx.total}`;
     let feedback: string | undefined = opts.seedFeedback;
     let parentId = ctx.parentId;
-    const failures: string[] = [];
+    // Seeded with the prior round's rejections (if any) so reviewers see the
+    // whole rejection history for this step, not just this round's.
+    const failures: string[] = [...(opts.previousFailures ?? [])];
 
     for (let n = 1; n <= config.maxVerifyRetries; n++) {
       const attempt = opts.attemptOffset + n; // global attempt no. (round 2 → 6..10)
@@ -509,6 +516,7 @@ export class RunPipeline {
         diff,
         cwd: targetDir,
         attempt,
+        previousFailures: failures.slice(),
         buildStepId: buildStep.id,
         order,
       });
@@ -582,6 +590,7 @@ export class RunPipeline {
       diff: string;
       cwd: string;
       attempt: number;
+      previousFailures: string[];
       buildStepId: string;
       order: () => number;
     }
@@ -603,6 +612,8 @@ export class RunPipeline {
           cwd: ctx.cwd,
           plan: ctx.approvedPlan,
           diff: ctx.diff,
+          attempt: ctx.attempt,
+          previousFailures: ctx.previousFailures,
         });
         await step.verdict(ctx.attempt, result.passed, result.reason, ctx.diff, result.raw);
         if (result.usage && reviewer.model !== "-") {
