@@ -1,9 +1,12 @@
-import { ORCHESTRATOR_URL } from "../base";
+import { ORCH_URL } from "../../../lib/orch";
 
 export const dynamic = "force-dynamic";
 
+// SSE passthrough — the one orchestrator route that can't use orchProxy: it
+// must keep the response streaming with event-stream headers, and fail fast
+// with a 502 when the upstream isn't there (EventSource retries on its own).
 export async function GET() {
-  const upstream = await fetch(`${ORCHESTRATOR_URL}/events`, { cache: "no-store" });
+  const upstream = await fetch(`${ORCH_URL}/events`, { cache: "no-store" });
 
   if (!upstream.ok || !upstream.body) {
     return new Response("orchestrator event stream unavailable", { status: 502 });
@@ -17,4 +20,3 @@ export async function GET() {
     },
   });
 }
-

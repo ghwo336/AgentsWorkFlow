@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../../lib/api";
 import { useOrchestratorEvents } from "../../lib/useOrchestratorEvents";
-import type { Run, RunDetail, StartRunInput } from "../../lib/types";
+import type { InterventionDecision, Run, RunDetail, StartRunInput } from "../../lib/types";
 
 // Container logic for one project's workspace: owns the run list + selected
 // detail, keeps them live over SSE, and exposes the start/decide actions.
@@ -158,13 +158,7 @@ export function useWorkspace(project: string) {
 
   // Resolve a run stuck at needs_input (guide/commit/skip/abort).
   const intervene = useCallback(
-    async (
-      decision:
-        | { action: "guide"; feedback: string }
-        | { action: "commit" }
-        | { action: "skip" }
-        | { action: "abort" }
-    ) => {
+    async (decision: InterventionDecision) => {
       if (!detail) return;
       try {
         await api.resume(detail.id, decision);

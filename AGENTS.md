@@ -2,6 +2,10 @@
 
 > 이 문서는 코드베이스를 처음 접하는 사람/에이전트가 **구조와 동작 원리, 작업 규칙**을
 > 빠르게 파악하도록 작성되었습니다. 코드를 바꾸기 전에 먼저 읽으세요.
+>
+> ⚠️ **코드를 추가/수정하려면 [docs/CODE-QUALITY.md](docs/CODE-QUALITY.md)(코드 품질
+> 행동양식)도 반드시 읽으세요.** 아키텍처 원칙(SOLID)·디자인 패턴·작업 절차·금지
+> 사항이 정리되어 있습니다.
 
 ## 1. 한 줄 요약
 
@@ -41,7 +45,8 @@ agent-loop/
 
 ### packages/shared (`src/`)
 - `db.ts` — 핫리로드/장수 프로세스에서 재사용되는 단일 `prisma` 클라이언트.
-- `types.ts` — `RunStatus`, `Phase`, `BusEvent`, `CodexVerdict`, `UsageRecord` 등 공용 어휘.
+- `types.ts` — `RunStatus`, `Phase`, `BusEvent`, `CodexVerdict`, `UsageRecord`,
+  `InterventionDecision` 등 공용 어휘. **두 패키지가 같은 타입을 쓰면 여기에 단일 정의.**
 - `pricing.ts` — 모델별 토큰 단가표 + `costUsd()` 계산. 오케스트레이터(기록 시)와 대시보드(표시)가 공유.
 
 ## 3. 오케스트레이터 아키텍처 (핵심)
@@ -80,24 +85,37 @@ app/
 ├── globals.css               # 전역 스타일 + 모바일 미디어쿼리(.cols/.side/.stats/.table-scroll)
 ├── page.tsx                  # 홈: 프로젝트 목록 + 새 프로젝트
 ├── lib/
-│   ├── types.ts              # 클라이언트 뷰모델(ProjectSummary/Run/RunEvent/RunDetail)
+│   ├── types.ts              # 클라이언트 뷰모델(ProjectSummary/Run/RunEvent/RunDetail) + shared 타입 재수출
 │   ├── api.ts                # 백엔드 호출 단일 창구(fetch/에러메시지 일원화)
+│   ├── orch.ts               # 오케스트레이터 base URL + orchJson()(서버 컴포넌트용) + orchProxy()(라우트 핸들러용)
+│   ├── cast.ts               # 픽셀 캐릭터 도메인 데이터(CAST/역할 매핑/agentForStep·Event) — 순수, 서버/클라 겸용
+│   ├── agents.tsx            # 픽셀 아트 SVG 컴포넌트(PixelAvatar/TeamRoster 등) + cast 재수출
+│   ├── Markdown.tsx          # 공용 마크다운 렌더러
+│   ├── useBusyAction.ts      # 액션 버튼 그룹 busy 상태 훅(승인/개입 패널 공용)
 │   └── useOrchestratorEvents.ts  # SSE 구독 훅("load 이후 연결" 로직 캡슐화)
 ├── projects/[name]/
 │   ├── page.tsx              # 워크스페이스: 조립만 담당
 │   ├── useWorkspace.ts       # 컨테이너 훅(runs/detail/selected 상태 + start/decide 액션 + 라이브 갱신). detail에 steps 포함 → SSE마다 리로드되어 시각화 라이브 갱신
-│   ├── _components.tsx       # 프레젠테이셔널: NewTaskForm/RunList/RunDetailCard/ApprovalPanel/LiveLog
+│   ├── _plan-steps.ts        # 순수 파생 로직: Step[] → 단계 그룹핑/행 상태/결과 배지 (React 없음)
+│   ├── _components/          # 프레젠테이셔널 — 관심사별 1파일 (index.ts barrel)
+│   │   ├── NewTaskForm / ProjectSettings / RepoPicker
+│   │   ├── RunList(+RunDetailCard) / RunProgress / AgentWorkSummary
+│   │   └── ApprovalPanel / InterventionPanel / LiveLog / StatusBadge
 │   └── _viz.tsx              # RunViz — Step 배열 위 4개 뷰(리스트/칸반/노드그래프(SVG)/타임라인). 외부 viz 라이브러리 없음
-├── history/page.tsx          # 전체 작업 내역(서버 컴포넌트, Prisma 직접 조회)
-├── usage/page.tsx            # 토큰/비용 집계(서버 컴포넌트)
+├── history/page.tsx          # 전체 작업 내역(서버 컴포넌트, orchJson으로 조회)
+├── usage/page.tsx            # 토큰/비용 집계(서버 컴포넌트, orchJson으로 조회)
 ├── runs/[id]/page.tsx        # run 상세(+ DiffView)
 └── api/                      # Route Handlers
-    ├── projects, runs        # Prisma 직접 조회(읽기용)
-    └── orchestrator/*        # 오케스트레이터(127.0.0.1:4000)로 프록시 + SSE 패스스루
+    ├── projects, runs        # 오케스트레이터 /data/*로 orchProxy (DB 소유자를 경유한 읽기)
+    ├── repos                 # 서버의 git repo 스캔(레포 피커용)
+    └── orchestrator/*        # 쓰기/실행 프록시 + SSE 패스스루
 ```
 
-- **읽기(목록/상세/사용량)**: 대시보드가 Prisma로 직접 조회.
-- **쓰기/실행(run 시작·승인, 이벤트 스트림)**: `app/api/orchestrator/*`가 오케스트레이터 HTTP로 프록시(`base.ts`의 `ORCHESTRATOR_URL`).
+- **모든 DB 접근은 오케스트레이터(DB 소유 프로세스)를 경유**: 서버 컴포넌트는
+  `lib/orch.ts`의 `orchJson()`, 라우트 핸들러는 `orchProxy()`를 사용한다. 컨테이너가
+  SQLite 파일을 직접 읽지 않는 이유는 orchestrator의 `http-data.ts` 주석 참조.
+- **쓰기/실행(run 시작·승인·개입, 이벤트 스트림)**: `app/api/orchestrator/*`가
+  오케스트레이터 HTTP로 프록시. SSE(events)만 스트리밍 헤더 때문에 수동 패스스루.
 
 ## 5. 데이터 모델 (Prisma, SQLite)
 
@@ -150,8 +168,12 @@ npm run dev                  # orchestrator(:4000) + dashboard(:3737) 동시 실
   모바일에서 세로 스택되도록 클래스를 붙일 것.
 - **새 엔진/도구 추가**: `agents/types.ts` 인터페이스를 구현하고 `runner.ts`에서 주입.
   파이프라인 로직은 건드리지 말 것.
+- **코드 품질**: [docs/CODE-QUALITY.md](docs/CODE-QUALITY.md)의 원칙(단일 책임,
+  추상화 의존, 중복 금지)과 작업 절차를 따를 것. 구조를 바꾸면 이 문서도 같은 커밋에서 갱신.
 
 ### 커밋 메시지 양식
 - `feat:` 기능/수정사항
 - `fix:` 오류 수정
 - `docs:` 문서 수정
+- `refactor:` 동작 변화 없는 구조 개선
+- `chore:` 빌드/설정 등 잡무

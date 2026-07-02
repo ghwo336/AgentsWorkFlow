@@ -49,52 +49,26 @@ export interface CreateStepInput {
   orderIdx?: number;
 }
 
-export async function createStep(runId: string, input: CreateStepInput): Promise<string> {
-  const row = await prisma.step.create({
-    data: {
-      runId,
-      parentId: input.parentId ?? null,
-      kind: input.kind,
-      label: input.label,
-      engine: input.engine ?? null,
-      model: input.model ?? null,
-      attempt: input.attempt ?? 1,
-      orderIdx: input.orderIdx ?? 0,
-      status: "running",
-    },
-  });
-  bus.publish({
-    type: "step",
-    runId,
-    stepId: row.id,
-    parentId: row.parentId,
-    kind: row.kind as StepKind,
-    label: row.label,
-    engine: row.engine,
-    model: row.model,
-    attempt: row.attempt,
-    stepStatus: row.status as StepStatus,
-    summary: row.summary,
-    orderIdx: row.orderIdx,
-    startedAt: row.startedAt.toISOString(),
-    endedAt: null,
-    ts: row.startedAt.toISOString(),
-  });
-  return row.id;
-}
-
-export async function updateStep(
-  stepId: string,
-  patch: { status?: StepStatus; summary?: string | null; end?: boolean }
-): Promise<void> {
-  const row = await prisma.step.update({
-    where: { id: stepId },
-    data: {
-      ...(patch.status ? { status: patch.status } : {}),
-      ...(patch.summary !== undefined ? { summary: patch.summary } : {}),
-      ...(patch.end ? { endedAt: new Date() } : {}),
-    },
-  });
+// The one place a Step row is turned into its SSE payload, so create/update
+// can never drift apart in what they broadcast.
+function publishStep(
+  row: {
+    id: string;
+    runId: string;
+    parentId: string | null;
+    kind: string;
+    label: string;
+    engine: string | null;
+    model: string | null;
+    attempt: number;
+    status: string;
+    summary: string | null;
+    orderIdx: number;
+    startedAt: Date;
+    endedAt: Date | null;
+  },
+  ts: Date
+): void {
   bus.publish({
     type: "step",
     runId: row.runId,
@@ -110,8 +84,41 @@ export async function updateStep(
     orderIdx: row.orderIdx,
     startedAt: row.startedAt.toISOString(),
     endedAt: row.endedAt ? row.endedAt.toISOString() : null,
-    ts: new Date().toISOString(),
+    ts: ts.toISOString(),
   });
+}
+
+export async function createStep(runId: string, input: CreateStepInput): Promise<string> {
+  const row = await prisma.step.create({
+    data: {
+      runId,
+      parentId: input.parentId ?? null,
+      kind: input.kind,
+      label: input.label,
+      engine: input.engine ?? null,
+      model: input.model ?? null,
+      attempt: input.attempt ?? 1,
+      orderIdx: input.orderIdx ?? 0,
+      status: "running",
+    },
+  });
+  publishStep(row, row.startedAt);
+  return row.id;
+}
+
+export async function updateStep(
+  stepId: string,
+  patch: { status?: StepStatus; summary?: string | null; end?: boolean }
+): Promise<void> {
+  const row = await prisma.step.update({
+    where: { id: stepId },
+    data: {
+      ...(patch.status ? { status: patch.status } : {}),
+      ...(patch.summary !== undefined ? { summary: patch.summary } : {}),
+      ...(patch.end ? { endedAt: new Date() } : {}),
+    },
+  });
+  publishStep(row, new Date());
 }
 
 // Transition a run's status: persist + broadcast.

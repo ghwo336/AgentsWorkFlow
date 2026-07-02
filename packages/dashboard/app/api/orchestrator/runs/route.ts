@@ -1,19 +1,8 @@
-import { ORCHESTRATOR_URL } from "../base";
+import { orchProxy } from "../../../lib/orch";
 
 export const dynamic = "force-dynamic";
 
+// Start a new run — forwarded to the orchestrator's POST /runs.
 export async function POST(req: Request) {
-  const upstream = await fetch(`${ORCHESTRATOR_URL}/runs`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: await req.text(),
-  });
-
-  return new Response(upstream.body, {
-    status: upstream.status,
-    headers: {
-      "Content-Type": upstream.headers.get("Content-Type") ?? "application/json",
-    },
-  });
+  return orchProxy("/runs", { method: "POST", body: await req.text() });
 }
-

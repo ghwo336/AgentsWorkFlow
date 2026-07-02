@@ -1,4 +1,12 @@
-import type { ChatMessage, Project, ProjectSummary, Run, RunDetail, StartRunInput } from "./types";
+import type {
+  ChatMessage,
+  InterventionDecision,
+  Project,
+  ProjectSummary,
+  Run,
+  RunDetail,
+  StartRunInput,
+} from "./types";
 
 // Single place that talks to the backend HTTP API. Centralizes URL building,
 // the no-store cache policy, and consistent (Korean) error messages so pages
@@ -79,12 +87,6 @@ export const api = {
 
   // Resolve a run stuck at needs_input: guide (fix instructions) / commit (accept
   // as-is) / skip (drop this step) / abort (stop the run).
-  resume: (
-    id: string,
-    decision:
-      | { action: "guide"; feedback: string }
-      | { action: "commit" }
-      | { action: "skip" }
-      | { action: "abort" }
-  ) => postJson<unknown>(`/api/orchestrator/runs/${id}/resume`, decision, "재개 요청 실패"),
+  resume: (id: string, decision: InterventionDecision) =>
+    postJson<unknown>(`/api/orchestrator/runs/${id}/resume`, decision, "재개 요청 실패"),
 };

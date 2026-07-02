@@ -52,6 +52,15 @@ export interface BusEvent {
   ts: string;
 }
 
+// The user's decision on a run parked at needs_input (a step that exhausted
+// retries + lead escalation). Single source of truth for the vocabulary shared
+// by the orchestrator (HTTP schema, pipeline) and the dashboard (API client).
+export type InterventionDecision =
+  | { action: "guide"; feedback: string } // re-run the stuck step with this guidance
+  | { action: "commit" } // accept the current (rejected) diff as-is
+  | { action: "skip" } // discard the stuck step's changes and move on
+  | { action: "abort" }; // stop the run
+
 // Shape codex is forced to emit via --output-schema.
 export interface CodexVerdict {
   verdict: "PASS" | "FAIL";

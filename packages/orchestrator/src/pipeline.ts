@@ -1,3 +1,4 @@
+import type { InterventionDecision } from "@agent-loop/shared/types";
 import type { Builder, Planner, Reviewer, VerifyResult } from "./agents/types.js";
 import type { GitOps } from "./git.js";
 import type { RunReporter } from "./reporter.js";
@@ -98,11 +99,7 @@ export class RunPipeline {
   async resumeFromInput(
     runId: string,
     reporter: RunReporter,
-    decision:
-      | { action: "guide"; feedback: string }
-      | { action: "commit" }
-      | { action: "skip" }
-      | { action: "abort" }
+    decision: InterventionDecision
   ): Promise<void> {
     if (decision.action === "abort") {
       await reporter.log("approval", "사용자가 막힌 단계에서 작업을 중단했습니다.", { level: "warn" });

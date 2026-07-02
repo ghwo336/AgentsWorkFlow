@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { ClaudeBuilder, ClaudePlanner } from "./agents/claude-agent.js";
 import { CodexVerifier } from "./agents/codex-agent.js";
 import { CommandReviewer } from "./agents/command-reviewer.js";
+import type { InterventionDecision } from "@agent-loop/shared/types";
 import type { Reviewer } from "./agents/types.js";
 import type { ApprovalDecision } from "./approval-gate.js";
 import { config } from "./config.js";
@@ -147,13 +148,10 @@ export async function resolveApproval(
 // 호재 escalation). Mirrors resolveApproval's DB-first, restart-safe contract:
 // returns false (→ 409) unless the run is actually awaiting input. Fire-and-
 // forget resumes the build per the decision.
-export type InputDecision =
-  | { action: "guide"; feedback: string }
-  | { action: "commit" }
-  | { action: "skip" }
-  | { action: "abort" };
-
-export async function resolveInput(runId: string, decision: InputDecision): Promise<boolean> {
+export async function resolveInput(
+  runId: string,
+  decision: InterventionDecision
+): Promise<boolean> {
   const st = await store.getResumeState(runId);
   if (!st || st.status !== "needs_input") return false;
   const reporter = new DbRunReporter(runId);

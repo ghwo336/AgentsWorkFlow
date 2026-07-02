@@ -1,6 +1,10 @@
 // Client-side view models for the dashboard, shared across pages, hooks, and
 // the API client. The server shapes (Prisma rows) are serialized to these.
 
+// Cross-package vocabulary lives in @agent-loop/shared — re-exported here so
+// client code keeps a single import surface for its types.
+export type { InterventionDecision } from "@agent-loop/shared/types";
+
 export type ProjectSummary = {
   name: string;
   runCount: number;
