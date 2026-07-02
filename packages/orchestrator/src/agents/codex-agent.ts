@@ -6,17 +6,21 @@ import type { CodexVerdict } from "@agent-loop/shared/types";
 import { buildReviewPrompt } from "./review-policy.js";
 import type { CodexUsage, Reviewer, VerifyRequest, VerifyResult, Verifier } from "./types.js";
 
-// Run codex with its STDIN CLOSED. codex reads stdin whenever it's an open pipe
-// ("Reading additional input from stdin...") and blocks forever waiting for
-// EOF — and Node's execFile leaves the child stdin open, which hangs every
-// verification until timeout. Spawning with stdin='ignore' gives an immediate
-// EOF (equivalent to `codex … < /dev/null`), so it uses the prompt argument.
+// Run codex, feeding the PROMPT over STDIN (write + close). Two hard-won rules:
+// - The prompt must NOT be an argv argument: a big diff once blew the OS
+//   argument-size limit (spawn E2BIG) and killed every codex review at once.
+// - Stdin must be CLOSED after writing: codex reads an open stdin pipe
+//   ("Reading additional input from stdin...") and blocks forever waiting for
+//   EOF. Writing the prompt then end() gives it the input AND the EOF.
 function runCodex(
   args: string[],
-  opts: { cwd: string; timeoutMs: number; maxBuffer: number }
+  opts: { cwd: string; timeoutMs: number; maxBuffer: number; input: string }
 ): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const child = spawn("codex", args, { cwd: opts.cwd, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn("codex", args, { cwd: opts.cwd, stdio: ["pipe", "pipe", "pipe"] });
+    child.stdin.on("error", () => {}); // child may exit before we finish writing
+    child.stdin.write(opts.input);
+    child.stdin.end();
     let stdout = "";
     let stderr = "";
     let settled = false;
@@ -92,9 +96,9 @@ async function runCodexVerify(
         schemaPath,
         "--output-last-message",
         lastMsgPath,
-        prompt,
+        "-", // read the prompt from stdin (see runCodex) — argv has an OS size limit
       ],
-      { cwd: req.cwd, maxBuffer: 64 * 1024 * 1024, timeoutMs: 15 * 60 * 1000 }
+      { cwd: req.cwd, maxBuffer: 64 * 1024 * 1024, timeoutMs: 15 * 60 * 1000, input: prompt }
     );
 
     const usage = parseCodexUsage(stdout);

@@ -100,7 +100,18 @@ export interface ReviewPromptOpts {
   verdictFormat?: string[];
 }
 
+// Hard cap on the diff embedded in the prompt. A runaway diff (a scaffold that
+// staged node_modules was 37MB) kills every engine at once — codex via the OS
+// arg limit, claude via "Prompt is too long". Reviewers run inside the
+// workspace and can read files directly, so a truncated diff degrades to
+// "read the rest yourself" instead of an infra crash.
+const DIFF_PROMPT_CAP = 120_000;
+
 export function buildReviewPrompt(plan: string, diff: string, opts: ReviewPromptOpts = {}): string {
+  const shownDiff =
+    diff.length > DIFF_PROMPT_CAP
+      ? `${diff.slice(0, DIFF_PROMPT_CAP)}\n\n[... diff가 너무 커서 잘렸습니다 (전체 ${diff.length.toLocaleString()}자 중 ${DIFF_PROMPT_CAP.toLocaleString()}자 표시). 나머지 변경은 작업 디렉터리에서 git diff --cached 로 직접 확인하세요.]`
+      : diff;
   return [
     ...REVIEWER_PROMPT_HEADER,
     ...(opts.lens ?? []),
@@ -110,7 +121,7 @@ export function buildReviewPrompt(plan: string, diff: string, opts: ReviewPrompt
     ...previousFailuresBlock(opts.attempt, opts.previousFailures),
     "",
     "=== DIFF (uncommitted changes) ===",
-    diff || "(no changes)",
+    shownDiff || "(no changes)",
     ...(opts.verdictFormat ?? []),
   ].join("\n");
 }

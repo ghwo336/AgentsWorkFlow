@@ -1,8 +1,45 @@
 import { execFile } from "node:child_process";
-import { realpath } from "node:fs/promises";
+import { access, realpath, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { promisify } from "node:util";
 
 const pexec = promisify(execFile);
+
+// Baseline ignore rules for workspaces WE initialize. Builders scaffold projects
+// and run installs before any .gitignore exists — without this, `git add -A`
+// staged 1,191 node_modules files (a 37MB diff) on a real run, which nuked every
+// reviewer (E2BIG / prompt-too-long) and bloated the DB. User-supplied repos are
+// never touched (ensureRepo returns early for existing repo roots).
+const BASELINE_GITIGNORE = `node_modules/
+.next/
+dist/
+build/
+out/
+coverage/
+.cache/
+.turbo/
+*.log
+.DS_Store
+.env
+.env.*
+!.env.example
+`;
+
+// Diff surface reviewers see: exclude machine-generated files that carry no
+// review signal but massive byte counts. (node_modules is belt-and-braces for
+// workspaces that staged junk before the baseline .gitignore existed.)
+const DIFF_EXCLUDES = [
+  ":(exclude)node_modules/**",
+  ":(exclude)**/node_modules/**",
+  ":(exclude)package-lock.json",
+  ":(exclude)**/package-lock.json",
+  ":(exclude)pnpm-lock.yaml",
+  ":(exclude)**/pnpm-lock.yaml",
+  ":(exclude)yarn.lock",
+  ":(exclude)**/yarn.lock",
+  ":(exclude)*.min.js",
+  ":(exclude)*.min.css",
+];
 
 async function runGit(cwd: string, args: string[]): Promise<string> {
   const { stdout } = await pexec("git", args, {
@@ -36,12 +73,16 @@ export async function ensureRepo(cwd: string): Promise<void> {
   // Make sure there's an identity so commits don't fail in fresh envs.
   await runGit(cwd, ["config", "user.name", "agent-loop"]).catch(() => {});
   await runGit(cwd, ["config", "user.email", "agent-loop@local"]).catch(() => {});
+  // Seed ignore rules BEFORE any add -A can vacuum up node_modules and friends.
+  const gi = join(cwd, ".gitignore");
+  const exists = await access(gi).then(() => true, () => false);
+  if (!exists) await writeFile(gi, BASELINE_GITIGNORE).catch(() => {});
 }
 
 // Diff of uncommitted work (staged + unstaged + untracked), same surface codex reviews.
 export async function uncommittedDiff(cwd: string): Promise<string> {
   await runGit(cwd, ["add", "-A"]); // stage so untracked files show in the diff
-  return runGit(cwd, ["diff", "--cached"]);
+  return runGit(cwd, ["diff", "--cached", "--", ".", ...DIFF_EXCLUDES]);
 }
 
 export async function hasChanges(cwd: string): Promise<boolean> {

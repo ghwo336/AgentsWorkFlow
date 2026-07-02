@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Skill(update-config)",
-      "Skill(update-config:*)"
+      "Skill(update-config:*)",
+      "Bash(sqlite3 /Users/Shared/srv/agent-loop/prisma/prisma/dev.db 'SELECT r.title, r.status FROM Run r ORDER BY r.createdAt DESC LIMIT 2;')",
+      "Bash(sqlite3 /Users/Shared/srv/agent-loop/prisma/prisma/dev.db 'SELECT s.label, s.status, s.attempt, datetime\\(s.startedAt/1000,'\\\\''unixepoch'\\\\'','\\\\''localtime'\\\\''\\), COALESCE\\(datetime\\(s.endedAt/1000,'\\\\''unixepoch'\\\\'','\\\\''localtime'\\\\''\\),'\\\\''진행중'\\\\''\\), substr\\(COALESCE\\(s.summary,'\\\\'''\\\\''\\),1,60\\) FROM Step s JOIN Run r ON r.id=s.runId WHERE s.kind IN \\('\\\\''review'\\\\'','\\\\''test'\\\\''\\) AND r.createdAt = \\(SELECT MAX\\(createdAt\\) FROM Run\\) ORDER BY s.startedAt DESC LIMIT 8;')"
     ]
   }
 }

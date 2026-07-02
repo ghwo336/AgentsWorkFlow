@@ -182,6 +182,20 @@ export async function recordUsage(runId: string, u: UsageRecord, stepId?: string
   );
 }
 
+// Verdict rows keep the reviewed diff for the dashboard's DiffView, but a
+// runaway diff must not balloon the DB: one run whose scaffold staged
+// node_modules stored 37MB per verdict (143MB total) and the run-detail JSON
+// became too big for the dashboard to render at all. Cap what we persist —
+// the full diff is always reproducible from the workspace anyway.
+const VERDICT_TEXT_CAP = 300_000;
+
+function capText(s: string | undefined): string | undefined {
+  if (s === undefined) return undefined;
+  return s.length > VERDICT_TEXT_CAP
+    ? `${s.slice(0, VERDICT_TEXT_CAP)}\n\n[... ${s.length.toLocaleString()}자 중 ${VERDICT_TEXT_CAP.toLocaleString()}자만 저장됨]`
+    : s;
+}
+
 // Record a codex verification attempt.
 export async function recordVerdict(
   runId: string,
@@ -193,7 +207,15 @@ export async function recordVerdict(
   stepId?: string
 ) {
   await prisma.verdict.create({
-    data: { runId, attempt, passed, reason, diff, raw, stepId: stepId ?? null },
+    data: {
+      runId,
+      attempt,
+      passed,
+      reason,
+      diff: capText(diff),
+      raw: capText(raw),
+      stepId: stepId ?? null,
+    },
   });
   bus.publish({
     type: "verdict",
