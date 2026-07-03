@@ -5,8 +5,9 @@ import { ClaudeBuilder, ClaudePlanner } from "./agents/claude-agent.js";
 import { ClaudeReviewer } from "./agents/claude-reviewer.js";
 import { CodexVerifier } from "./agents/codex-agent.js";
 import { CommandReviewer } from "./agents/command-reviewer.js";
+import { loadHarness } from "./agents/harness.js";
 import { QUALITY_LENS, SECURITY_LENS } from "./agents/review-policy.js";
-import { rosterOf, SEATS, type RosterRole } from "@agent-loop/shared/roster";
+import { describeTeam, rosterOf, seatsOf } from "@agent-loop/shared/roster";
 import type { InterventionDecision } from "@agent-loop/shared/types";
 import type { Reviewer } from "./agents/types.js";
 import type { ApprovalDecision } from "./approval-gate.js";
@@ -22,10 +23,11 @@ export interface StartInput {
   project?: string; // logical project for grouping costs; defaults to "default"
   targetDir?: string; // existing repo to work in; omit for a fresh workspace
   workspaceName?: string; // name a fresh workspace folder instead of a random id
-  // Participating roster SEAT keys ("build:juho" — validated at the HTTP
-  // boundary). Omit = 전원. The combo decides the pipeline mode: 기획 포함 →
-  // plan→승인→build, 기획 생략 → 바로 build, 검증만 → 프로젝트 감사, 기획만 →
-  // 계획서만.
+  // Participating roster SEAT keys ("build:minjae" — validated at the HTTP
+  // boundary). The combo decides the pipeline mode: 기획 포함 → plan→승인→build,
+  // 기획 생략 → 바로 build, 검증만 → 프로젝트 감사, 기획만 → 계획서만.
+  // OMIT the field entirely for 자동 배치: the run starts with the full team and
+  // 호재 staffs the actual team while planning (```team block → Run.agents).
   agents?: string[];
 }
 
@@ -55,6 +57,16 @@ function projectDirName(project: string): string {
 // pipeline depends on abstractions. Swapping an engine = changing one line here.
 const store = new RunStore();
 
+// Per-agent harnesses (agents-config/<agentId>.md) — each teammate's personal
+// specialty rules, appended to their shared role prompt. Missing file = no-op.
+const harnessOf = (agentId: string) => loadHarness(agentId);
+// A codex reviewer's harness rides in its lens (codex has no separate system
+// prompt slot in our adapter).
+const lensWith = (lens: string[], agentId: string, name: string): string[] => {
+  const h = harnessOf(agentId);
+  return h ? [...lens, "", `=== ${name}의 개인 하네스 (추가 규칙) ===`, h] : lens;
+};
+
 // Reviewer fan-out. Add a reviewer here (another engine, a second code
 // reviewer, a linter) and it shows up as a parallel node — the pipeline is
 // unchanged (OCP). The optional test-runner is enabled by setting TEST_CMD.
@@ -67,20 +79,31 @@ const store = new RunStore();
 const reviewers: Reviewer[] = [
   new CodexVerifier(config.verdictSchemaPath, config.codexModel, {
     name: "품질",
-    lens: QUALITY_LENS,
+    lens: lensWith(QUALITY_LENS, "juho", "주호"),
   }),
   new CodexVerifier(config.verdictSchemaPath, config.codexModel, {
     name: "보안",
-    lens: SECURITY_LENS,
+    lens: lensWith(SECURITY_LENS, "donghwan", "동환"),
   }),
-  new ClaudeReviewer(config.reviewModel),
+  new ClaudeReviewer(config.reviewModel, harnessOf("yujun")),
   new BuildGateReviewer(),
   ...(config.testCmd ? [new CommandReviewer("tests", config.testCmd)] : []),
 ];
 
+// One builder per developer, each armed with that person's specialty harness
+// (태경=프론트엔드, 민재=백엔드, 주희=iOS, 성민=Android, 연한=RN). The plain
+// `builder` stays as the fallback for legacy runs with no stamped assignee.
+const buildersById = Object.fromEntries(
+  seatsOf("build").map((s) => [
+    s.agentId,
+    new ClaudeBuilder(config.buildModel, harnessOf(s.agentId), s.name),
+  ])
+);
+
 const pipeline = new RunPipeline({
-  planner: new ClaudePlanner(config.planModel),
+  planner: new ClaudePlanner(config.planModel, harnessOf("hojae")),
   builder: new ClaudeBuilder(config.buildModel),
+  buildersById,
   reviewers,
   git,
   store,
@@ -100,11 +123,14 @@ function onFatal(reporter: DbRunReporter) {
 export async function startRun(input: StartInput): Promise<string> {
   const project = input.project?.trim() || "default";
   const agents = input.agents?.length ? input.agents : null;
+  // 팀 미지정 = 자동 배치: 호재가 계획하며 ```team 블록으로 팀을 확정한다.
+  const autoTeam = agents === null;
   const { id } = await store.createRun({
     title: input.title,
     brief: input.brief,
     project,
     agents,
+    autoTeam,
   });
 
   // Precedence: explicit targetDir → per-run named workspace → project's
@@ -127,14 +153,9 @@ export async function startRun(input: StartInput): Promise<string> {
   const reporter = new DbRunReporter(id);
   const roster = rosterOf(agents);
   if (agents) {
-    const label = (role: RosterRole, title: string) => {
-      const names = SEATS.filter((s) => s.role === role && agents.includes(s.key)).map((s) => s.name);
-      return names.length ? `${title} ${names.join("·")}` : null;
-    };
-    const team = [label("plan", "기획"), label("build", "개발"), label("verify", "검증")]
-      .filter(Boolean)
-      .join(" / ");
-    await reporter.log("system", `참여 에이전트: ${team}`);
+    await reporter.log("system", `참여 에이전트: ${describeTeam(agents)}`);
+  } else {
+    await reporter.log("system", "팀 미지정 — 호재가 기획하면서 알맞은 팀을 배치합니다.");
   }
   if (!roster.planner && roster.builderIds.length === 0) {
     // 검증만 — 프로젝트 현재 상태 감사
@@ -146,8 +167,14 @@ export async function startRun(input: StartInput): Promise<string> {
     // 기획 생략 — 승인 없이 바로 구현 (검증은 선택된 만큼)
     pipeline.directBuild(id, input.brief, targetDir, reporter).catch(onFatal(reporter));
   } else {
-    // 기본 — 계획 → 승인 → 구현/검증
-    pipeline.plan(id, input.brief, targetDir, reporter).catch(onFatal(reporter));
+    // 기본 — 계획 → 승인 → 구현/검증. 자동 배치 run이면 호재가 팀도 추천하고,
+    // 단계별 담당 개발자는 두 모드 모두 계획에서 배정된다.
+    pipeline
+      .plan(id, input.brief, targetDir, reporter, {
+        suggestTeam: autoTeam,
+        builderIds: roster.builderIds,
+      })
+      .catch(onFatal(reporter));
   }
 
   return id;
@@ -174,11 +201,15 @@ export async function resolveApproval(
   if (decision.action === "revise") {
     await reporter.log("approval", `수정 요청: ${decision.feedback}`);
     // Re-plan with the prior plan + feedback; parks at awaiting_approval again.
+    // 자동 배치 run은 수정된 계획에 맞춰 팀도 다시 추천된다.
     if (st.targetDir) {
       pipeline
         .plan(runId, st.brief, st.targetDir, reporter, {
           previousPlan: st.plan ?? undefined,
           feedback: decision.feedback,
+          suggestTeam: st.autoTeam,
+          // 자동 배치 run은 재추천이 팀을 다시 정하므로 전원을 배정 후보로.
+          builderIds: st.autoTeam ? rosterOf(null).builderIds : rosterOf(st.agents).builderIds,
         })
         .catch(onFatal(reporter));
     }

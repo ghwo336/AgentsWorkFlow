@@ -32,6 +32,9 @@ export type Run = {
   // JSON-encoded string[] of the decomposed plan-step descriptions (what each
   // 단계 N actually does), persisted when the plan is approved.
   planSteps?: string | null;
+  // JSON-encoded (string|null)[] aligned with planSteps: 단계별 담당 개발자
+  // person id (계획에서 배정, 미배정 = null).
+  stepDevs?: string | null;
   commit?: string | null;
   error?: string | null;
   targetDir?: string | null;

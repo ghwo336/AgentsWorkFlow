@@ -73,7 +73,7 @@ export function RunDetailCard({ detail }: { detail: RunDetail }) {
                 <span
                   key={a.id}
                   style={{ display: "inline-flex", alignItems: "center", gap: 3, color: ROLE_COLOR[g.role] }}
-                  title={`${a.name} · ${g.role === "verify" ? a.roleLabel : ROLE_LABEL[g.role]}`}
+                  title={`${a.name} · ${a.roleLabel}`}
                 >
                   <PixelAvatar agent={a} size={16} />
                   {a.name}

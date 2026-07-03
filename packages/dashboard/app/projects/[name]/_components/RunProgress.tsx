@@ -17,6 +17,7 @@ import {
   planRowAgent,
   planRowState,
   planStepDescriptions,
+  planStepDevs,
   planStepTotal,
   toneFor,
   type StepGroup,
@@ -36,12 +37,14 @@ function PlanStepTable({
   total,
   needsInput = false,
   fallbackBuilder,
+  devs = [],
 }: {
   descriptions: string[];
   groups: StepGroup[];
   total: number;
   needsInput?: boolean;
   fallbackBuilder?: Agent;
+  devs?: (string | null)[]; // 계획에서 배정된 단계별 담당 (person id)
 }) {
   const groupByNo = new Map(groups.map((g) => [g.no, g]));
   const count = Math.max(descriptions.length, total, groups.length);
@@ -70,7 +73,9 @@ function PlanStepTable({
         if (needsInput && st.tone === "failed") {
           st = { icon: "🚧", label: "개입 대기", tone: "failed" };
         }
-        const agent = planRowAgent(group, fallbackBuilder);
+        // 아직 시작 전인 행은 계획에서 배정된 담당자를 보여준다 (없으면 1번 개발자).
+        const assigned = devs[no - 1] ? agentById(devs[no - 1]!) : fallbackBuilder;
+        const agent = planRowAgent(group, assigned);
         const desc = descriptions[no - 1] ?? `단계 ${no}`;
         const showFlow = !!group && st.tone !== "pending";
         return (
@@ -250,6 +255,7 @@ export function RunProgress({ detail }: { detail: RunDetail }) {
           total={total}
           needsInput={detail.status === "needs_input"}
           fallbackBuilder={firstBuilder}
+          devs={planStepDevs(detail)}
         />
       )}
 

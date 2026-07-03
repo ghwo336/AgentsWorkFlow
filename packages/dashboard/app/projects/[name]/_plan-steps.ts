@@ -111,6 +111,17 @@ export function planStepDescriptions(detail: RunDetail): string[] {
   }
 }
 
+// 단계별 담당 개발자 배정(person id) — planSteps와 같은 인덱스, 미배정 = null.
+export function planStepDevs(detail: RunDetail): (string | null)[] {
+  try {
+    const raw = detail.stepDevs;
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr.map((d) => (typeof d === "string" && d ? d : null)) : [];
+  } catch {
+    return [];
+  }
+}
+
 export type RowState = { icon: string; label: string; tone: Tone };
 
 // A plan-step row's status, derived from its work-span group (if it has started).

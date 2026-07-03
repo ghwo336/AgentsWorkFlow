@@ -4,7 +4,8 @@
 // deterministically (by attempt / id hash) so identities stay stable on reload.
 //
 //   기획 (plan)   = Opus       → 호재
-//   개발 (build)  = Sonnet     → 태경 · 민재
+//   개발 (build)  = Sonnet     → 태경(프론트엔드) · 민재(백엔드) · 주희(iOS)
+//                                · 성민(Android) · 연한(크로스플랫폼 RN)
 //   코드 품질 (verify) = codex(품질)  → 주호 (SOLID 등 공학 원칙)
 //   보안 검증 (verify) = codex(보안)  → 동환 (보안 전담 감사)
 //   통합 검증 (verify) = Claude(통합) → 유준 (런타임·배선 동작)
@@ -75,9 +76,9 @@ export const CAST: Agent[] = [
     id: "taekyung",
     name: "태경",
     role: "build",
-    roleLabel: "개발",
+    roleLabel: "프론트엔드",
     engineLabel: "Sonnet",
-    blurb: "설계대로 코드를 짜요",
+    blurb: "웹 화면(UI)을 만들어요 — 프론트엔드 전문",
     hair: "#2b2b33",
     shirt: "#57d99a",
     accent: "#2f8f63",
@@ -88,14 +89,53 @@ export const CAST: Agent[] = [
     id: "minjae",
     name: "민재",
     role: "build",
-    roleLabel: "개발",
+    roleLabel: "백엔드",
     engineLabel: "Sonnet",
-    blurb: "까다로운 부분을 맡아 구현해요",
+    blurb: "서버와 데이터(API/DB)를 맡아요 — 백엔드 전문",
     hair: "#3a2f4a",
     shirt: "#3fd0c9",
     accent: "#238f89",
     feature: "spiky",
     laptop: MACBOOK_SPACEGRAY,
+  },
+  {
+    id: "juhee",
+    name: "주희",
+    role: "build",
+    roleLabel: "iOS",
+    engineLabel: "Sonnet",
+    blurb: "Swift로 아이폰 앱을 만들어요 — iOS 전문",
+    hair: "#5a3550",
+    shirt: "#ff8fb1",
+    accent: "#c2557f",
+    feature: "none",
+    laptop: MACBOOK_SILVER,
+  },
+  {
+    id: "seongmin",
+    name: "성민",
+    role: "build",
+    roleLabel: "Android",
+    engineLabel: "Sonnet",
+    blurb: "Kotlin으로 안드로이드 앱을 만들어요 — Android 전문",
+    hair: "#2b2b33",
+    shirt: "#3ddc84",
+    accent: "#1f8f4d",
+    feature: "glasses",
+    laptop: MACBOOK_SPACEGRAY,
+  },
+  {
+    id: "yeonhan",
+    name: "연한",
+    role: "build",
+    roleLabel: "크로스플랫폼",
+    engineLabel: "Sonnet",
+    blurb: "React Native로 iOS·Android를 한 번에 만들어요",
+    hair: "#23303f",
+    shirt: "#61dafb",
+    accent: "#2a91b8",
+    feature: "headset",
+    laptop: MACBOOK_SILVER,
   },
   {
     id: "juho",

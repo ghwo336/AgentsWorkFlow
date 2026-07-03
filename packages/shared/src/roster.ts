@@ -15,6 +15,9 @@ export interface RosterSeat {
   agentId: string; // person id, stamped on Step/ChatMsg/Usage rows ("juho")
   name: string; // 주호
   role: RosterRole;
+  // Specialization shown in the picker/office (개발자만: 프론트엔드/백엔드/...).
+  // Each dev also has a matching harness file: orchestrator/agents-config/<agentId>.md
+  specialty?: string;
   // The reviewer identity key(s) this verify seat owns in the pipeline fan-out
   // (Reviewer.name). 성호 also owns the optional TEST_CMD reviewer ("tests").
   reviewerNames?: string[];
@@ -22,8 +25,11 @@ export interface RosterSeat {
 
 export const SEATS: RosterSeat[] = [
   { key: "plan:hojae", agentId: "hojae", name: "호재", role: "plan" },
-  { key: "build:taekyung", agentId: "taekyung", name: "태경", role: "build" },
-  { key: "build:minjae", agentId: "minjae", name: "민재", role: "build" },
+  { key: "build:taekyung", agentId: "taekyung", name: "태경", role: "build", specialty: "프론트엔드" },
+  { key: "build:minjae", agentId: "minjae", name: "민재", role: "build", specialty: "백엔드" },
+  { key: "build:juhee", agentId: "juhee", name: "주희", role: "build", specialty: "iOS" },
+  { key: "build:seongmin", agentId: "seongmin", name: "성민", role: "build", specialty: "Android" },
+  { key: "build:yeonhan", agentId: "yeonhan", name: "연한", role: "build", specialty: "크로스플랫폼(RN)" },
   { key: "verify:juho", agentId: "juho", name: "주호", role: "verify", reviewerNames: ["품질"] },
   { key: "verify:donghwan", agentId: "donghwan", name: "동환", role: "verify", reviewerNames: ["보안"] },
   { key: "verify:yujun", agentId: "yujun", name: "유준", role: "verify", reviewerNames: ["통합"] },
@@ -77,6 +83,41 @@ export function rosterOf(keys: string[] | null | undefined): RunRoster {
     verifierIds: verify.map((s) => s.agentId),
     reviewerNames: verify.flatMap((s) => s.reviewerNames ?? []),
   };
+}
+
+// Sanitize a PLANNER-recommended team (호재의 ```team 블록) into an applyable
+// selection: unknown keys dropped, 호재 자신은 항상 포함(에스컬레이션 유지),
+// 개발자가 한 명도 안 남으면 적용 불가(null) — 계획 기반 run은 구현이 있어야 한다.
+// 안전선: 자동 배치가 "검증자 0명 → 리뷰 없는 커밋"으로 흐르지 않도록, 품질(주호)과
+// 빌드 게이트(성호)는 추천과 무관하게 항상 포함한다. 검증을 정말 빼는 것은 사용자가
+// 직접 선택 모드에서 의식적으로 고를 때만 가능하다.
+export function applyableTeam(keys: string[]): string[] | null {
+  const known = [...new Set(keys.map(String).filter((k) => byKey.has(k)))];
+  if (!known.includes("plan:hojae")) known.unshift("plan:hojae");
+  for (const required of ["verify:juho", "verify:seongho"]) {
+    if (!known.includes(required)) known.push(required);
+  }
+  return rosterOf(known).builderIds.length > 0 ? known : null;
+}
+
+// A dev reference from the planner ("build:taekyung" seat key, or a bare person
+// id) → build-seat person id, or null when it isn't a selectable developer.
+export function devAgentIdOf(ref: string): string | null {
+  const seat = byKey.get(ref);
+  if (seat?.role === "build") return seat.agentId;
+  const byPerson = SEATS.find((s) => s.role === "build" && s.agentId === ref);
+  return byPerson?.agentId ?? null;
+}
+
+// "기획 호재 / 개발 태경·민재 / 검증 주호·성호" — 로그·채팅용 한 줄 팀 요약.
+export function describeTeam(keys: string[]): string {
+  const part = (role: RosterRole, title: string) => {
+    const names = SEATS.filter((s) => s.role === role && keys.includes(s.key)).map((s) => s.name);
+    return names.length ? `${title} ${names.join("·")}` : null;
+  };
+  return [part("plan", "기획"), part("build", "개발"), part("verify", "검증")]
+    .filter(Boolean)
+    .join(" / ");
 }
 
 // Validate a user-supplied selection STRICTLY — the API boundary rejects what

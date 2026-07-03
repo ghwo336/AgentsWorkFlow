@@ -23,9 +23,12 @@ model Run {
   title     String
   brief     String // the original planning input from the user
   status    String   @default("planning") // planning | awaiting_approval | building | verifying | committed | rejected | failed | cancelled
-  agents    String? // JSON array of participating agent ids (e.g. ["hojae","juho"]); null = 전원 (legacy)
+  agents    String? // JSON array of participating seat keys (e.g. ["build:minjae"]); null = 전원 (legacy)
+  autoTeam  Boolean  @default(false) // true = 사용자가 팀을 안 골랐고 호재가 계획하며 배치 (revise 때 재배치 허용)
   plan      String? // approved plan text (from Opus)
   planSteps String? // JSON array of decomposed plan-step descriptions (for restart-safe resume)
+  stepDevs  String? // JSON array (planSteps와 같은 길이) of assigned builder person ids ("taekyung"), null 항목 = 미배정
+
   targetDir String? // working copy path for this run
   commit    String? // final commit hash on success
   error     String? // terminal error message, if any

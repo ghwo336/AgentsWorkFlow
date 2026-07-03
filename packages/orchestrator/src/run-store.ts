@@ -5,8 +5,10 @@ export interface CreateRunInput {
   title: string;
   brief: string;
   project: string;
-  // Participating roster agent ids; null/empty = 전원 (default team).
+  // Participating roster seat keys; null/empty = 전원 (default team).
   agents?: string[] | null;
+  // 사용자가 팀을 고르지 않음 — 호재가 계획하며 배치(추천 적용) 대상.
+  autoTeam?: boolean;
 }
 
 // Persistence boundary for runs/projects. Keeps Prisma details out of the
@@ -26,6 +28,7 @@ export class RunStore {
         project: input.project,
         status: "planning",
         agents: input.agents?.length ? JSON.stringify(input.agents) : null,
+        autoTeam: input.autoTeam ?? false,
       },
     });
     return { id: run.id };
@@ -54,10 +57,25 @@ export class RunStore {
     return prisma.run.update({ where: { id: runId }, data: { plan } });
   }
 
+  // Apply 호재's recommended team (auto-team runs) — seat keys onto Run.agents.
+  saveAgents(runId: string, seatKeys: string[]): Promise<unknown> {
+    return prisma.run.update({
+      where: { id: runId },
+      data: { agents: JSON.stringify(seatKeys) },
+    });
+  }
+
   // Persist the decomposed plan steps so the build phase can resume from the DB
-  // after an approval — even across an orchestrator restart.
-  saveSteps(runId: string, steps: string[]): Promise<unknown> {
-    return prisma.run.update({ where: { id: runId }, data: { planSteps: JSON.stringify(steps) } });
+  // after an approval — even across an orchestrator restart. `devs` (같은 길이,
+  // 항목 = builder person id 또는 null)는 단계별 담당 개발자 배정.
+  saveSteps(runId: string, steps: string[], devs?: (string | null)[]): Promise<unknown> {
+    return prisma.run.update({
+      where: { id: runId },
+      data: {
+        planSteps: JSON.stringify(steps),
+        stepDevs: devs?.some((d) => d) ? JSON.stringify(devs) : null,
+      },
+    });
   }
 
   async getTitle(runId: string): Promise<string | null> {
@@ -72,7 +90,9 @@ export class RunStore {
     plan: string | null;
     targetDir: string | null;
     steps: string[];
-    agents: string[] | null; // participating roster ids; null = 전원
+    stepDevs: (string | null)[]; // 단계별 담당 개발자 person id (미배정 = null)
+    agents: string[] | null; // participating seat keys; null = 전원
+    autoTeam: boolean; // 호재가 팀을 배치하는 run (revise 시 재배치 허용)
   } | null> {
     const r = await prisma.run.findUnique({ where: { id: runId } });
     if (!r) return null;
@@ -85,13 +105,24 @@ export class RunStore {
         /* malformed — fall back to none */
       }
     }
+    let stepDevs: (string | null)[] = [];
+    if (r.stepDevs) {
+      try {
+        const arr = JSON.parse(r.stepDevs);
+        if (Array.isArray(arr)) stepDevs = arr.map((d) => (d ? String(d) : null));
+      } catch {
+        /* malformed — no assignments */
+      }
+    }
     return {
       status: r.status,
       brief: r.brief,
       plan: r.plan,
       targetDir: r.targetDir,
       steps,
+      stepDevs,
       agents: parseAgents(r.agents),
+      autoTeam: r.autoTeam,
     };
   }
 

@@ -335,10 +335,10 @@ export function AgentChip({ agent, size = 26 }: { agent: Agent; size?: number })
   );
 }
 
-// What a seat card's sub-line says: build seats run Sonnet (whoever sits
-// there), plan runs Opus, verify seats show the person's 직책 (코드 품질 등).
+// What a seat card's sub-line says: build seats show the dev's 전문 분야
+// (프론트엔드/백엔드/iOS/…), plan shows the engine, verify seats the 직책.
 function seatSubLabel(seat: RosterSeat, a: Agent): string {
-  if (seat.role === "build") return "Sonnet";
+  if (seat.role === "build") return seat.specialty ?? a.roleLabel;
   if (seat.role === "plan") return a.engineLabel;
   return a.roleLabel;
 }

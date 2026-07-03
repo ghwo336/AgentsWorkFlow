@@ -1,5 +1,7 @@
-import { isAbsolute, relative, resolve } from "node:path";
-import { query, type CanUseTool, type PermissionResult } from "@anthropic-ai/claude-agent-sdk";
+import { query, type CanUseTool } from "@anthropic-ai/claude-agent-sdk";
+import { seatsOf } from "@agent-loop/shared/roster";
+import { withHarness } from "./harness.js";
+import { workspaceGuard } from "./workspace-guard.js";
 import type { PhaseReporter } from "../reporter.js";
 import type {
   AgentResult,
@@ -12,64 +14,16 @@ import type {
 
 type ClaudePhase = "plan" | "build";
 
-// ── Workspace confinement ────────────────────────────────────────────────────
-// Agents run with a cwd of their assigned workspace, but the tools (Bash/Write)
-// can reach anywhere on disk. Without a guard, an agent handed an EMPTY workspace
-// will happily wander up to a real repo it finds and edit THAT instead. These
-// keep every file write / command inside the workspace.
-function isInside(root: string, p: string): boolean {
-  const rel = relative(root, p);
-  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
-}
-
-// A canUseTool handler that denies any file operation or command reaching
-// outside `targetDir`. Paths inside are auto-approved (no human in the loop).
-function workspaceGuard(targetDir: string): CanUseTool {
-  const root = resolve(targetDir);
-  const deny = (message: string): PermissionResult => ({ behavior: "deny", message });
-  return async (toolName, input) => {
-    const pathArg =
-      (input.file_path as string) ??
-      (input.notebook_path as string) ??
-      (input.path as string) ??
-      "";
-    if (typeof pathArg === "string" && pathArg) {
-      const abs = isAbsolute(pathArg) ? pathArg : resolve(root, pathArg);
-      if (!isInside(root, abs)) {
-        return deny(
-          `작업 디렉터리(${root}) 밖의 경로는 사용할 수 없습니다: ${pathArg}. 작업은 반드시 이 폴더 안에서만 하세요.`
-        );
-      }
-    }
-    if (toolName === "Bash" && typeof input.command === "string") {
-      // Block commands that reach into a sibling repo under the srv tree.
-      const refs = (input.command as string).match(/\/(?:Users\/Shared\/srv|srv)\/[^\s"';|)&]+/g) ?? [];
-      for (const p of refs) {
-        if (!isInside(root, resolve(p))) {
-          return deny(
-            `작업 디렉터리(${root}) 밖의 경로(${p})를 참조하는 명령은 허용되지 않습니다. 이 폴더 안에서만 작업하세요.`
-          );
-        }
-      }
-    }
-    // MUST echo the (unchanged) input back as updatedInput. The SDK's permission
-    // control-protocol validates the allow response and REJECTS a missing
-    // updatedInput with "expected record, received undefined" — which surfaces to
-    // the agent as "ZodError: Tool permission request failed" and blocks EVERY
-    // Write/Edit/Bash, so nothing ever gets built.
-    return { behavior: "allow", updatedInput: input };
-  };
-}
-
-// A boundary reminder injected into the prompt (belt-and-braces with the guard):
-// the workspace IS the project root; if empty, scaffold here — don't go find
-// another repo to modify.
+// A boundary reminder injected into the prompt (belt-and-braces with the
+// workspace-guard, which enforces this): the workspace IS the project root; if
+// empty, scaffold here — don't go find another repo to modify.
 function workspaceRule(cwd: string): string {
   return [
     `# 작업 디렉터리 (엄수)`,
     `당신의 작업 폴더는 \`${cwd}\` 입니다.`,
     `- 모든 파일 생성/수정/명령은 반드시 이 폴더 안에서만 하세요.`,
     `- 상위 폴더로 나가거나 다른 프로젝트/저장소를 절대 건드리지 마세요.`,
+    `- 임시 파일이 필요하면 /tmp가 아니라 이 폴더 안의 \`.tmp/\`를 만들어 쓰세요 (밖은 차단됩니다).`,
     `- 이 폴더가 비어 있으면 정상입니다 — 요청받은 것을 여기서 처음부터 새로 만드세요(scaffold).`,
     `- 바깥에 기존 저장소가 보여도 그것을 수정 대상으로 삼지 마세요.`,
   ].join("\n");
@@ -230,6 +184,63 @@ Example:
 ["Prisma 스키마에 X 모델 추가 후 마이그레이션", "API 라우트 /api/x 구현", "대시보드 UI 연결"]
 \`\`\``;
 
+// Step-assignment addendum: when the run has specialist developers, each plan
+// step must name its assignee so the RIGHT specialist implements it (지적:
+// attempt 순번 배정은 스택 무관 배정이 된다). The catalog is the run's devs.
+function assignSystem(devs: Array<{ key: string; name: string; specialty?: string }>): string {
+  const list = devs
+    .map((d) => `  - ${d.key} — ${d.name}${d.specialty ? ` (${d.specialty})` : ""}`)
+    .join("\n");
+  return `
+STEP ASSIGNMENT: each element of the \`\`\`steps array must be an OBJECT
+{"desc": "<단계 설명 (한국어)>", "dev": "<seat key>"} — "dev"는 그 단계를 구현할
+개발자이며 아래 목록에서만 고른다. 각 단계는 스택이 맞는 전문가에게 배정하라
+(예: 화면/UI 단계 → 프론트엔드, API/DB 단계 → 백엔드). 한 단계가 두 스택에
+걸치면 더 비중이 큰 쪽에 배정하고 단계를 나눌 수 있으면 나눠라.
+
+참여 개발자:
+${list}
+
+Example:
+\`\`\`steps
+[{"desc": "Prisma 스키마에 X 모델 추가", "dev": "build:minjae"},
+ {"desc": "대시보드 UI 연결", "dev": "build:taekyung"}]
+\`\`\``;
+}
+
+// Auto-team runs: the planner also STAFFS the team. Appended to PLAN_SYSTEM
+// only when the run was started without an explicit selection (suggestTeam).
+// The seat catalog is generated from the shared roster so a new hire never
+// requires touching this prompt.
+function teamSystem(): string {
+  const devs = seatsOf("build")
+    .map((s) => `  - ${s.key} — ${s.name} (${s.specialty})`)
+    .join("\n");
+  const verifiers = seatsOf("verify")
+    .map((s) => `  - ${s.key} — ${s.name} (${s.reviewerNames?.[0] ?? "검증"})`)
+    .join("\n");
+  return `
+ALSO: the user did not pick a team — YOU staff it. After the \`\`\`steps block,
+append a \`\`\`team block: a JSON array of seat keys, the SMALLEST sensible team
+for THIS request. Available seats:
+
+개발자 (스택에 맞는 사람만, 최소 1명 — 무관한 스택의 개발자를 넣으면 재시도가
+그 사람에게 배정되어 품질이 떨어진다):
+${devs}
+
+검증자 (기본으로 verify:juho(품질)와 verify:seongho(빌드 실행)를 포함하고,
+인증·입력 처리·네트워크 등 보안이 중요한 작업엔 verify:donghwan을,
+UI↔API 배선이 핵심인 작업엔 verify:yujun을 추가):
+${verifiers}
+
+plan:hojae(당신)는 자동 포함되므로 넣지 않아도 된다. 계획 본문에 팀 배치 이유를
+한 줄로 언급하라. Example:
+
+\`\`\`team
+["build:taekyung", "build:minjae", "verify:juho", "verify:yujun", "verify:seongho"]
+\`\`\``;
+}
+
 const BUILD_SYSTEM = `You are the BUILD agent in an automated dev loop.
 Implement the requested work exactly. When a specific STEP is given, implement
 ONLY that step — do not start other steps. Make all necessary file edits in the
@@ -264,9 +275,13 @@ Respond in KOREAN with a short, decisive action plan the builder can execute:
   3) 하지 말아야 할 것 (반복된 실패 패턴을 다시 밟지 않도록).
 Keep code, identifiers, paths, versions, and commands in their original form.`;
 
-// Claude planning agent (Opus): produces the approval-gated plan.
+// Claude planning agent (Opus): produces the approval-gated plan. An optional
+// personal harness (agents-config/hojae.md) is appended to both prompts.
 export class ClaudePlanner implements Planner {
-  constructor(private readonly model: string) {}
+  constructor(
+    private readonly model: string,
+    private readonly harness?: string
+  ) {}
 
   // Lead-engineer escalation: diagnose a repeatedly-failing step (read-only) and
   // return concrete fix guidance for the builder's next round.
@@ -285,7 +300,7 @@ export class ClaudePlanner implements Planner {
     return runClaude(reporter, "plan", this.model, prompt, {
       cwd: req.cwd,
       permissionMode: "plan",
-      systemPrompt: INTERVENE_SYSTEM,
+      systemPrompt: withHarness(INTERVENE_SYSTEM, this.harness, "호재"),
       canUseTool: workspaceGuard(req.cwd),
       disallowedTools: ["Write", "Edit", "MultiEdit", "NotebookEdit", "Task"],
     });
@@ -302,10 +317,13 @@ export class ClaudePlanner implements Planner {
           ].join("\n\n")
         : req.brief;
     const prompt = `${workspaceRule(req.cwd)}\n\n${body}`;
+    let system = PLAN_SYSTEM;
+    if (req.assignableDevs?.length) system += `\n${assignSystem(req.assignableDevs)}`;
+    if (req.suggestTeam) system += `\n${teamSystem()}`;
     return runClaude(reporter, "plan", this.model, prompt, {
       cwd: req.cwd,
       permissionMode: "plan",
-      systemPrompt: PLAN_SYSTEM,
+      systemPrompt: withHarness(system, this.harness, "호재"),
       canUseTool: workspaceGuard(req.cwd),
       // The plan must land inline (not in a file), and the planner must not spawn
       // a subagent that roams outside the workspace — so block writes + Task.
@@ -315,8 +333,15 @@ export class ClaudePlanner implements Planner {
 }
 
 // Claude build agent (Sonnet): implements the approved plan, auto-approved.
+// Instantiated once PER DEVELOPER (runner.ts) with that person's harness
+// (agents-config/<agentId>.md — 태경=프론트엔드, 민재=백엔드, 주희=iOS, …) so
+// each teammate builds with their own specialty rules on top of BUILD_SYSTEM.
 export class ClaudeBuilder implements Builder {
-  constructor(private readonly model: string) {}
+  constructor(
+    private readonly model: string,
+    private readonly harness?: string,
+    private readonly name = "개발자"
+  ) {}
 
   build(req: BuildRequest, reporter: PhaseReporter): Promise<AgentResult> {
     const s = req.step;
@@ -364,7 +389,7 @@ export class ClaudeBuilder implements Builder {
       // write/command that reaches outside req.cwd (replaces blanket bypass).
       permissionMode: "default",
       canUseTool: workspaceGuard(req.cwd),
-      systemPrompt: BUILD_SYSTEM,
+      systemPrompt: withHarness(BUILD_SYSTEM, this.harness, this.name),
       // No roaming subagents — keep the builder in its own workspace.
       disallowedTools: ["Task"],
     });

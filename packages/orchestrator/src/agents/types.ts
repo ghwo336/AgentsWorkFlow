@@ -14,6 +14,13 @@ export interface PlanRequest {
   // changes. When set, the planner revises rather than starting from scratch.
   previousPlan?: string;
   feedback?: string;
+  // Auto-team run: the planner must also staff the team — append a ```team
+  // block recommending which developers/verifiers fit this request.
+  suggestTeam?: boolean;
+  // Developers available for step assignment (seat key + specialty). When set,
+  // every ```steps item must be {"desc", "dev"} — the planner matches each step
+  // to the specialist whose stack fits it (프론트 단계→태경, API 단계→민재, …).
+  assignableDevs?: Array<{ key: string; name: string; specialty?: string }>;
 }
 
 export interface BuildRequest {

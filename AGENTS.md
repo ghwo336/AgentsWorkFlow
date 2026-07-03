@@ -36,6 +36,16 @@ brief ──▶ ① Plan (Claude Opus) ──▶ ★ 사람 승인 ──▶ ②
   - 기획만: 계획서 작성 후 종료 (`pipeline.planOnly`)
   - 기획+검증(개발 없음) 조합은 불가(`validateAgents`가 400). 검증자 미선택 시 리뷰 생략 후
     바로 커밋, 호재 미참여 시 에스컬레이션 라운드 없이 바로 needs_input.
+  - **자동 배치** (`Run.autoTeam`, `agents` 필드 생략 = 기본): 호재가 계획하며 \`\`\`team
+    블록으로 팀을 추천 → `applyableTeam`으로 정제해 `Run.agents`에 적용(개발자 0명이면
+    전원 유지). revise 시 수정된 계획에 맞춰 재배치. UI 기본 모드가 "호재가 배치".
+- **에이전트별 하네스** (`packages/orchestrator/agents-config/<agentId>.md`): 각 팀원의
+  전문 분야·작업 규칙이 담긴 개인 시스템 프롬프트 확장. 개발자는 사람마다 `ClaudeBuilder`
+  인스턴스가 따로 조립되어(runner.ts `buildersById`) 자기 하네스로 빌드한다 —
+  태경=프론트엔드, 민재=백엔드, 주희=iOS, 성민=Android, 연한=크로스플랫폼(RN).
+  플래너(hojae.md)와 리뷰어(juho/donghwan → 렌즈에 append, yujun)도 같은 파일 규약.
+  파일 수정 후 orchestrator 재시작 필요. **프로젝트 성격에 맞는 개발자를 선택**하는 것이
+  전제 — 시도(attempt) 재배정은 선택된 개발자들 사이에서만 순환한다.
 
 ## 2. 모노레포 구조 (npm workspaces)
 

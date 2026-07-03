@@ -30,18 +30,25 @@ const VERDICT_FORMAT = [
 
 // Claude-backed reviewer for the fan-out. Read-only (plan permission mode +
 // writes disallowed); reports usage back through VerifyResult so the pipeline
-// attributes cost to its step like every other reviewer.
+// attributes cost to its step like every other reviewer. An optional personal
+// harness (agents-config/yujun.md) extends the lens.
 export class ClaudeReviewer implements Reviewer {
   readonly name = "통합";
   readonly kind = "review" as const;
   readonly engine = "claude";
-  constructor(readonly model: string) {}
+  constructor(
+    readonly model: string,
+    private readonly harness?: string
+  ) {}
 
   async review(req: VerifyRequest): Promise<VerifyResult> {
+    const lens = this.harness
+      ? [...RUNTIME_LENS, "", "=== 유준의 개인 하네스 (추가 규칙) ===", this.harness]
+      : RUNTIME_LENS;
     const prompt = buildReviewPrompt(req.plan, req.diff, {
       attempt: req.attempt,
       previousFailures: req.previousFailures,
-      lens: RUNTIME_LENS,
+      lens,
       verdictFormat: VERDICT_FORMAT,
     });
 

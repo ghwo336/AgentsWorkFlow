@@ -1,4 +1,12 @@
-import { REVIEWER_AGENT_ID, rosterOf, type RunRoster } from "@agent-loop/shared/roster";
+import {
+  applyableTeam,
+  describeTeam,
+  devAgentIdOf,
+  REVIEWER_AGENT_ID,
+  rosterOf,
+  SEATS,
+  type RunRoster,
+} from "@agent-loop/shared/roster";
 import type { InterventionDecision } from "@agent-loop/shared/types";
 import type { Builder, Planner, Reviewer, VerifyResult } from "./agents/types.js";
 import type { GitOps } from "./git.js";
@@ -15,7 +23,10 @@ export interface PipelineConfig {
 
 export interface PipelineDeps {
   planner: Planner;
-  builder: Builder;
+  builder: Builder; // fallback when a builder id has no dedicated instance
+  // Per-developer builders (person id → Builder with that person's harness):
+  // 태경=프론트엔드, 민재=백엔드, 주희=iOS, 성민=Android, 연한=RN.
+  buildersById?: Record<string, Builder>;
   reviewers: Reviewer[]; // fan-out: every reviewer inspects the same diff
   git: GitOps;
   store: RunStore;
@@ -59,21 +70,54 @@ export class RunPipeline {
     brief: string,
     targetDir: string,
     reporter: RunReporter,
-    opts: { previousPlan?: string; feedback?: string } = {}
+    opts: {
+      previousPlan?: string;
+      feedback?: string;
+      suggestTeam?: boolean;
+      // 이 run에서 단계를 배정받을 수 있는 개발자 person id들 (수동 선택 run은
+      // 선택된 개발자만, 자동 배치 run은 전원 — runner가 채운다).
+      builderIds?: string[];
+    } = {}
   ): Promise<void> {
     await this.deps.git.ensureRepo(targetDir);
     const order = await this.resumeOrder(runId);
-    const planned = await this.planOnce(
-      brief,
-      targetDir,
-      reporter,
-      order,
-      opts.previousPlan,
-      opts.feedback
-    );
+    const assignableDevs = SEATS.filter(
+      (s) => s.role === "build" && (opts.builderIds?.includes(s.agentId) ?? true)
+    ).map((s) => ({ key: s.key, name: s.name, specialty: s.specialty }));
+    const planned = await this.planOnce(brief, targetDir, reporter, order, {
+      previousPlan: opts.previousPlan,
+      feedback: opts.feedback,
+      suggestTeam: opts.suggestTeam,
+      assignableDevs,
+    });
     if (planned === null) return; // planOnce already marked the run failed
 
-    await this.deps.store.saveSteps(runId, planned.steps);
+    // 자동 배치 run: 호재가 추천한 팀 + 단계 배정에 등장한 개발자를 합쳐 적용
+    // (승인 화면에서 함께 확인된다). applyableTeam이 최소 검증자(주호·성호)를
+    // 강제한다. 추천이 아예 없으면 전원 참여로 안전하게 진행.
+    let effectiveBuilders = opts.builderIds ?? null; // null = 전원
+    if (opts.suggestTeam) {
+      const assignedSeats = planned.devs
+        .filter((d): d is string => !!d)
+        .map((id) => SEATS.find((s) => s.role === "build" && s.agentId === id)?.key)
+        .filter((k): k is string => !!k);
+      const recommended = [...(planned.team ?? []), ...assignedSeats];
+      const team = recommended.length > 0 ? applyableTeam(recommended) : null;
+      if (team) {
+        await this.deps.store.saveAgents(runId, team);
+        effectiveBuilders = rosterOf(team).builderIds;
+        await reporter.log("plan", `👥 호재의 팀 배치: ${describeTeam(team)}`);
+      } else {
+        await reporter.log("plan", "호재가 팀을 특정하지 않아 전원 참여로 진행합니다.", {
+          level: "warn",
+        });
+      }
+    }
+    // 단계 배정 정리: 최종 로스터에 없는 개발자 배정은 무효(null → 순환 배정).
+    const devs = planned.devs.map((d) =>
+      d && (effectiveBuilders === null || effectiveBuilders.includes(d)) ? d : null
+    );
+    await this.deps.store.saveSteps(runId, planned.steps, devs);
     await reporter.status("awaiting_approval", { plan: planned.text });
     await reporter.log(
       "approval",
@@ -97,6 +141,7 @@ export class RunPipeline {
       runId,
       approvedPlan: st.plan,
       steps: st.steps,
+      stepDevs: st.stepDevs,
       brief: st.brief,
       targetDir: st.targetDir,
       reporter,
@@ -238,6 +283,7 @@ export class RunPipeline {
         runId,
         approvedPlan: st.plan,
         steps: st.steps,
+        stepDevs: st.stepDevs,
         brief: st.brief,
         targetDir: st.targetDir,
         reporter,
@@ -309,6 +355,7 @@ export class RunPipeline {
     | {
         plan: string;
         steps: string[];
+        stepDevs: (string | null)[];
         brief: string;
         targetDir: string;
         planStepId: string;
@@ -331,6 +378,7 @@ export class RunPipeline {
     return {
       plan: st.plan,
       steps,
+      stepDevs: st.stepDevs,
       brief: st.brief,
       targetDir: st.targetDir,
       planStepId,
@@ -355,10 +403,21 @@ export class RunPipeline {
     targetDir: string,
     reporter: RunReporter,
     order: () => number,
-    previousPlan?: string,
-    feedback?: string
-  ): Promise<{ text: string; stepId: string; steps: string[] } | null> {
+    opts: {
+      previousPlan?: string;
+      feedback?: string;
+      suggestTeam?: boolean;
+      assignableDevs?: Array<{ key: string; name: string; specialty?: string }>;
+    } = {}
+  ): Promise<{
+    text: string;
+    stepId: string;
+    steps: string[];
+    devs: (string | null)[];
+    team: string[] | null;
+  } | null> {
     const { planner, config } = this.deps;
+    const { previousPlan, feedback, suggestTeam, assignableDevs } = opts;
     const revising = !!feedback;
     await reporter.status("planning");
     const step = await reporter.startStep({
@@ -377,16 +436,20 @@ export class RunPipeline {
       { model: "opus" }
     );
 
-    const result = await planner.plan({ brief, cwd: targetDir, previousPlan, feedback }, step);
+    const result = await planner.plan(
+      { brief, cwd: targetDir, previousPlan, feedback, suggestTeam, assignableDevs },
+      step
+    );
     if (result.isError || !result.text) {
       await step.finish("failed", "계획을 생성하지 못했습니다.");
       await reporter.status("failed", { error: "계획을 생성하지 못했습니다." });
       return null;
     }
-    const { steps, cleanText } = parseSteps(result.text);
+    const { team, cleanText: withoutTeam } = parseTeam(result.text);
+    const { steps, devs, cleanText } = parseSteps(withoutTeam);
     await step.log("plan", `계획을 ${steps.length}개 작업 단계로 분해했습니다.`, { model: "opus" });
     await step.finish("passed", compactAgentSummary(cleanText, "승인용 구현 계획을 작성했습니다."));
-    return { text: cleanText, stepId: step.id, steps };
+    return { text: cleanText, stepId: step.id, steps, devs, team };
   }
 
   // ②③④ Walk the plan step by step from `startIdx`. Each step is implemented
@@ -397,6 +460,7 @@ export class RunPipeline {
     runId: string;
     approvedPlan: string;
     steps: string[];
+    stepDevs?: (string | null)[]; // 단계별 담당 개발자 (계획에서 배정)
     brief: string;
     targetDir: string;
     reporter: RunReporter;
@@ -426,6 +490,7 @@ export class RunPipeline {
         roster,
         parentId,
         description: steps[i],
+        assignedDev: args.stepDevs?.[i] ?? undefined,
         index: i + 1,
         total: steps.length,
         completed: [...completed],
@@ -464,6 +529,7 @@ export class RunPipeline {
     roster: RunRoster;
     parentId: string;
     description: string;
+    assignedDev?: string; // 이 단계의 담당 개발자 person id (계획에서 배정)
     index: number;
     total: number;
     completed: string[];
@@ -590,13 +656,14 @@ export class RunPipeline {
       roster: RunRoster;
       parentId: string;
       description: string;
+      assignedDev?: string;
       index: number;
       total: number;
       completed: string[];
     },
     opts: { seedFeedback?: string; attemptOffset: number; previousFailures?: string[] }
   ): Promise<{ passed: boolean; lastStepId: string; sha: string; feedback?: string; failures: string[] }> {
-    const { builder, git, store, config } = this.deps;
+    const { git, store, config } = this.deps;
     const reviewers = this.reviewersFor(ctx.roster);
     const { reporter, targetDir, order } = ctx;
     const tag = `단계 ${ctx.index}/${ctx.total}`;
@@ -608,7 +675,16 @@ export class RunPipeline {
 
     for (let n = 1; n <= config.maxVerifyRetries; n++) {
       const attempt = opts.attemptOffset + n; // global attempt no. (round 2 → 6..10)
-      const builderId = this.builderFor(ctx.roster, attempt);
+      // 담당 배정이 있으면 재시도 포함 모든 attempt를 그 전문가가 잡는다 —
+      // 스택이 맞는 사람이 계속 파는 것이, 무관한 전문가에게 넘기는 것보다 낫다.
+      // 배정이 없을 때만 (레거시/기획 생략) attempt 순환으로 교대.
+      const builderId =
+        ctx.assignedDev && ctx.roster.builderIds.includes(ctx.assignedDev)
+          ? ctx.assignedDev
+          : this.builderFor(ctx.roster, attempt);
+      // The assigned teammate's own builder (their specialty harness); fall back
+      // to the generic builder for unknown/legacy ids.
+      const builder = (builderId && this.deps.buildersById?.[builderId]) || this.deps.builder;
       // ② BUILD (auto-approved, scoped to this step)
       await reporter.status("building");
       const buildStep = await reporter.startStep({
@@ -825,23 +901,62 @@ export class RunPipeline {
 // plan text with that block removed (so the approval view stays clean). Falls
 // back to a single step (the whole plan) when no valid block is present, which
 // degrades gracefully to a one-shot build.
-function parseSteps(planText: string): { steps: string[]; cleanText: string } {
+// Pull the planner's recommended team out of a fenced ```team block (a JSON
+// array of seat keys) and return the text without it. Missing/malformed block
+// → null team; validation/sanitizing happens in applyableTeam at the call site.
+function parseTeam(planText: string): { team: string[] | null; cleanText: string } {
+  const fence = /```team\s*([\s\S]*?)```/i;
+  const m = planText.match(fence);
+  if (!m) return { team: null, cleanText: planText };
+  const cleanText = planText.replace(fence, "").trim();
+  try {
+    const arr = JSON.parse(m[1].trim());
+    if (Array.isArray(arr) && arr.length > 0) {
+      return { team: arr.map((k) => String(k)), cleanText };
+    }
+  } catch {
+    /* malformed block — recommendation ignored */
+  }
+  return { team: null, cleanText };
+}
+
+// Items are either plain strings (legacy) or {"desc","dev"} objects — the dev
+// is the planner's step assignee, resolved to a builder person id (or null when
+// unknown/not a developer, which falls back to attempt rotation at build time).
+function parseSteps(planText: string): {
+  steps: string[];
+  devs: (string | null)[];
+  cleanText: string;
+} {
   const fence = /```steps\s*([\s\S]*?)```/i;
   const m = planText.match(fence);
   if (m) {
     try {
       const arr = JSON.parse(m[1].trim());
       if (Array.isArray(arr)) {
-        const steps = arr.map((s) => String(s).trim()).filter(Boolean);
-        if (steps.length > 0) {
-          return { steps, cleanText: planText.replace(fence, "").trim() };
+        const items = arr
+          .map((s) => {
+            if (s && typeof s === "object" && "desc" in s) {
+              const desc = String((s as { desc: unknown }).desc ?? "").trim();
+              const devRef = String((s as { dev?: unknown }).dev ?? "");
+              return { desc, dev: devRef ? devAgentIdOf(devRef) : null };
+            }
+            return { desc: String(s).trim(), dev: null };
+          })
+          .filter((it) => it.desc);
+        if (items.length > 0) {
+          return {
+            steps: items.map((it) => it.desc),
+            devs: items.map((it) => it.dev),
+            cleanText: planText.replace(fence, "").trim(),
+          };
         }
       }
     } catch {
       /* malformed block — fall back to a single step */
     }
   }
-  return { steps: [planText.trim()], cleanText: planText };
+  return { steps: [planText.trim()], devs: [null], cleanText: planText };
 }
 
 // Store the agent's full summary (markdown structure preserved), not a clipped
