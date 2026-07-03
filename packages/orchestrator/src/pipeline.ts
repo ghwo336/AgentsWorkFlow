@@ -1,3 +1,4 @@
+import { REVIEWER_AGENT_ID, rosterOf, type RunRoster } from "@agent-loop/shared/roster";
 import type { InterventionDecision } from "@agent-loop/shared/types";
 import type { Builder, Planner, Reviewer, VerifyResult } from "./agents/types.js";
 import type { GitOps } from "./git.js";
@@ -32,6 +33,20 @@ export interface PipelineDeps {
 // render the process as a timeline / node graph / kanban off one data source.
 export class RunPipeline {
   constructor(private readonly deps: PipelineDeps) {}
+
+  // The injected reviewer fan-out, narrowed to the run's selected 검증자들.
+  // (Reviewer.name is the identity key: 품질/보안/통합/빌드/tests.)
+  private reviewersFor(roster: RunRoster): Reviewer[] {
+    return this.deps.reviewers.filter((r) => roster.reviewerNames.includes(r.name));
+  }
+
+  // Which selected builder takes this (global) attempt — retries hand off
+  // between the selected developers, matching the dashboard's seating rule.
+  private builderFor(roster: RunRoster, attempt: number): string | undefined {
+    const ids = roster.builderIds;
+    if (ids.length === 0) return undefined;
+    return ids[(Math.max(1, attempt) - 1) % ids.length];
+  }
 
   // ①★ PLAN → park at approval. Opus proposes a plan; we persist the plan text +
   // its decomposed steps and set the run to awaiting_approval, then RETURN — we
@@ -86,9 +101,112 @@ export class RunPipeline {
       targetDir: st.targetDir,
       reporter,
       order: st.order,
+      roster: st.roster,
       seedParentId: lastCommitStepId ?? st.planStepId,
       startIdx,
     });
+  }
+
+  // 기획 생략 모드 (호재 미참여): the brief itself becomes the "approved plan"
+  // as a single step — no approval gate — and the build/verify loop starts
+  // immediately. Persisted like an approved plan so restart/retry resume works.
+  async directBuild(runId: string, brief: string, targetDir: string, reporter: RunReporter): Promise<void> {
+    await this.deps.git.ensureRepo(targetDir);
+    await this.deps.store.savePlan(runId, brief);
+    await this.deps.store.saveSteps(runId, [brief]);
+    await reporter.log("approval", "기획 에이전트 없이 시작 — 요구사항을 그대로 구현합니다 (승인 단계 생략).");
+    await reporter.status("building");
+    await this.build(runId, reporter);
+  }
+
+  // 기획 전용 모드 (호재만 참여): produce the plan document and finish — there
+  // is no builder to hand it to, so the run completes at the plan.
+  async planOnly(runId: string, brief: string, targetDir: string, reporter: RunReporter): Promise<void> {
+    await this.deps.git.ensureRepo(targetDir);
+    const order = await this.resumeOrder(runId);
+    const planned = await this.planOnce(brief, targetDir, reporter, order);
+    if (planned === null) return; // planOnce already marked the run failed
+    await this.deps.store.saveSteps(runId, planned.steps);
+    await reporter.status("committed", { plan: planned.text });
+    await reporter.log("plan", "기획 전용 작업 — 계획서 작성을 완료했습니다 ✅ (구현 없이 종료)");
+  }
+
+  // 검증 전용 모드 (검증자만 참여): audit the project's CURRENT state instead of
+  // reviewing a fresh diff. Each selected reviewer inspects the working copy
+  // through its own lens; all pass → 완료, any fail → failed with the reasons.
+  async verifyOnly(
+    runId: string,
+    brief: string,
+    targetDir: string,
+    reporter: RunReporter,
+    roster: RunRoster
+  ): Promise<void> {
+    const { git } = this.deps;
+    await git.ensureRepo(targetDir);
+    const reviewers = this.reviewersFor(roster);
+    if (reviewers.length === 0) {
+      await reporter.status("failed", { error: "선택된 검증 에이전트가 없습니다." });
+      return;
+    }
+    const order = await this.resumeOrder(runId);
+    const names = reviewers.map((r) => r.name).join(", ");
+    await reporter.status("verifying");
+    await reporter.log("verify", `검증 전용 작업 — ${names} 검증자가 프로젝트 현재 상태를 감사합니다.`);
+
+    const diff = await git.uncommittedDiff(targetDir);
+    const auditPlan = [
+      "## 검증 전용 작업 (감사 모드)",
+      "이 작업은 새 코드 변경에 대한 리뷰가 아니라, 프로젝트의 **현재 상태 전체**에 대한 감사입니다.",
+      "DIFF가 비어 있어도 정상입니다 — 작업 디렉터리의 실제 코드를 직접 읽고, 아래 요청 관점에서",
+      "당신의 렌즈로 감사하세요. 실질적(material) 문제가 없으면 PASS, 있으면 FAIL과 함께",
+      "구체적 위치와 사유를 남기세요.",
+      "",
+      "## 사용자의 검증 요청",
+      brief,
+    ].join("\n");
+
+    const reviews = await this.review(reporter, reviewers, {
+      approvedPlan: auditPlan,
+      diff: diff || "(변경 없음 — 저장소 전체를 직접 감사하세요)",
+      cwd: targetDir,
+      attempt: 1,
+      previousFailures: [],
+      parentId: null,
+      order,
+    });
+    for (const r of reviews) {
+      await reporter.chat({
+        role: "verify",
+        attempt: 1,
+        kind: "verify",
+        toRole: "user",
+        stepLabel: "프로젝트 감사",
+        passed: r.result.passed,
+        engine: r.reviewer.name,
+        agent: REVIEWER_AGENT_ID[r.reviewer.name],
+        text: r.result.reason,
+      });
+    }
+
+    // 감사 모드는 reviewPolicy("any")를 따르지 않는다: 이 run의 목적 자체가
+    // "문제 발견 보고"이므로, 검증자 한 명이라도 FAIL이면 그 사유를 그대로
+    // 노출해야 한다 (보안 FAIL이 품질 PASS에 가려지면 안 됨).
+    const failed = reviews.filter((r) => !r.result.passed);
+    if (reviews.length > 0 && failed.length === 0) {
+      await reporter.status("committed", {});
+      await reporter.log("verify", `프로젝트 감사 완료 ✅ — ${names} 모두 통과했습니다.`);
+    } else {
+      const passedNames = reviews.filter((r) => r.result.passed).map((r) => r.reviewer.name);
+      const reasons = failed.map((r) => `[${r.reviewer.name}] ${r.result.reason}`).join("\n\n");
+      await reporter.status("failed", {
+        error: `검증에서 문제가 발견되었습니다 (${failed.map((r) => r.reviewer.name).join(", ")} 실패${passedNames.length ? ` · ${passedNames.join(", ")} 통과` : ""}):\n${reasons}`,
+      });
+      await reporter.log(
+        "verify",
+        `프로젝트 감사 결과 문제 발견 ❌ — 실패 ${failed.map((r) => r.reviewer.name).join(", ")}${passedNames.length ? ` / 통과 ${passedNames.join(", ")}` : ""}`,
+        { level: "warn" }
+      );
+    }
   }
 
   // Resume a run parked at needs_input, per the user's decision on the stuck step:
@@ -124,6 +242,7 @@ export class RunPipeline {
         targetDir: st.targetDir,
         reporter,
         order: st.order,
+        roster: st.roster,
         seedParentId,
         startIdx: fromIdx,
         seedFeedbackForFirst: seedFeedback,
@@ -187,7 +306,15 @@ export class RunPipeline {
     runId: string,
     reporter: RunReporter
   ): Promise<
-    | { plan: string; steps: string[]; brief: string; targetDir: string; planStepId: string; order: () => number }
+    | {
+        plan: string;
+        steps: string[];
+        brief: string;
+        targetDir: string;
+        planStepId: string;
+        order: () => number;
+        roster: RunRoster;
+      }
     | null
   > {
     const st = await this.deps.store.getResumeState(runId);
@@ -201,7 +328,15 @@ export class RunPipeline {
     // Fall back to the whole plan as a single step for runs planned before steps
     // were persisted.
     const steps = st.steps.length > 0 ? st.steps : [st.plan];
-    return { plan: st.plan, steps, brief: st.brief, targetDir: st.targetDir, planStepId, order };
+    return {
+      plan: st.plan,
+      steps,
+      brief: st.brief,
+      targetDir: st.targetDir,
+      planStepId,
+      order,
+      roster: rosterOf(st.agents),
+    };
   }
 
   // Monotonic orderIdx generator that continues past any steps already stored for
@@ -231,6 +366,7 @@ export class RunPipeline {
       label: revising ? "계획 수정" : "계획",
       engine: "claude",
       model: config.planModel,
+      agent: "hojae",
       orderIdx: order(),
     });
     await step.log(
@@ -265,11 +401,12 @@ export class RunPipeline {
     targetDir: string;
     reporter: RunReporter;
     order: () => number;
+    roster: RunRoster;
     seedParentId: string;
     startIdx: number;
     seedFeedbackForFirst?: string;
   }): Promise<void> {
-    const { runId, approvedPlan, steps, brief, targetDir, reporter, order } = args;
+    const { runId, approvedPlan, steps, brief, targetDir, reporter, order, roster } = args;
     const { git } = this.deps;
     // Chain parent: the first (resumed) step hangs off seedParentId (plan step,
     // or the previous step's commit); each next step hangs off the previous
@@ -286,6 +423,7 @@ export class RunPipeline {
         targetDir,
         reporter,
         order,
+        roster,
         parentId,
         description: steps[i],
         index: i + 1,
@@ -296,7 +434,7 @@ export class RunPipeline {
 
       if (!outcome.passed) {
         await reporter.status("needs_input", {
-          error: `단계 ${i + 1}/${steps.length}이(가) 재시도와 호재(Opus) 개입 후에도 검증을 통과하지 못했습니다. 마지막 사유: ${outcome.feedback ?? "-"}`,
+          error: `단계 ${i + 1}/${steps.length}이(가) 재시도${roster.planner ? "와 호재(Opus) 개입" : ""} 후에도 검증을 통과하지 못했습니다. 마지막 사유: ${outcome.feedback ?? "-"}`,
         });
         return;
       }
@@ -323,6 +461,7 @@ export class RunPipeline {
     targetDir: string;
     reporter: RunReporter;
     order: () => number;
+    roster: RunRoster;
     parentId: string;
     description: string;
     index: number;
@@ -338,6 +477,16 @@ export class RunPipeline {
     // this is a post-intervention resume).
     const r1 = await this.runStepRound(ctx, { seedFeedback: ctx.seedFeedback, attemptOffset: 0 });
     if (r1.passed) return r1;
+
+    // 호재가 팀에 없으면 에스컬레이션 라운드가 없다 — 바로 사용자 개입으로.
+    if (!ctx.roster.planner) {
+      await reporter.log(
+        "verify",
+        `${tag}: 검증을 통과하지 못했습니다 — 기획 에이전트(호재)가 없어 바로 사용자 개입을 기다립니다.`,
+        { level: "error" }
+      );
+      return { passed: false, lastStepId: r1.lastStepId, sha: "", feedback: r1.feedback };
+    }
 
     // Escalate to 호재 (Opus): diagnose the repeated failures + hand the builder
     // concrete guidance for the next round.
@@ -386,6 +535,7 @@ export class RunPipeline {
       label: `${tag} · 호재 개입`,
       engine: "claude",
       model: config.planModel,
+      agent: "hojae",
       attempt: config.maxVerifyRetries,
       parentId: round1.lastStepId,
       orderIdx: ctx.order(),
@@ -420,6 +570,7 @@ export class RunPipeline {
       kind: "escalate",
       toRole: "build",
       stepLabel: `단계 ${ctx.index}/${ctx.total}`,
+      agent: "hojae",
       text: guidance,
     });
     return { guidance, stepId: step.id };
@@ -436,6 +587,7 @@ export class RunPipeline {
       targetDir: string;
       reporter: RunReporter;
       order: () => number;
+      roster: RunRoster;
       parentId: string;
       description: string;
       index: number;
@@ -444,7 +596,8 @@ export class RunPipeline {
     },
     opts: { seedFeedback?: string; attemptOffset: number; previousFailures?: string[] }
   ): Promise<{ passed: boolean; lastStepId: string; sha: string; feedback?: string; failures: string[] }> {
-    const { builder, reviewers, git, store, config } = this.deps;
+    const { builder, git, store, config } = this.deps;
+    const reviewers = this.reviewersFor(ctx.roster);
     const { reporter, targetDir, order } = ctx;
     const tag = `단계 ${ctx.index}/${ctx.total}`;
     let feedback: string | undefined = opts.seedFeedback;
@@ -455,6 +608,7 @@ export class RunPipeline {
 
     for (let n = 1; n <= config.maxVerifyRetries; n++) {
       const attempt = opts.attemptOffset + n; // global attempt no. (round 2 → 6..10)
+      const builderId = this.builderFor(ctx.roster, attempt);
       // ② BUILD (auto-approved, scoped to this step)
       await reporter.status("building");
       const buildStep = await reporter.startStep({
@@ -462,6 +616,7 @@ export class RunPipeline {
         label: `${tag} · 빌드${attempt > 1 ? ` (시도 ${attempt})` : ""}`,
         engine: "claude",
         model: config.buildModel,
+        agent: builderId,
         attempt,
         parentId,
         orderIdx: order(),
@@ -503,29 +658,35 @@ export class RunPipeline {
         kind: "build",
         toRole: "verify",
         stepLabel: tag,
+        agent: builderId,
         text: buildSummary,
       });
 
       // ③ VERIFY — codex reviews THIS step's uncommitted diff (previous steps
       // are already committed, so the diff is exactly this step's changes).
-      await reporter.status("verifying");
-      const diff = await git.uncommittedDiff(targetDir);
-      const stepPlan = `${ctx.approvedPlan}\n\n=== 지금 검증할 단계 (${ctx.index}/${ctx.total}) ===\n${ctx.description}`;
-      const reviews = await this.review(reporter, reviewers, {
-        approvedPlan: stepPlan,
-        diff,
-        cwd: targetDir,
-        attempt,
-        previousFailures: failures.slice(),
-        buildStepId: buildStep.id,
-        order,
-      });
+      // 검증 에이전트가 선택되지 않은 팀은 리뷰를 생략하고 바로 커밋한다.
+      let reviews: Array<{ reviewer: Reviewer; result: VerifyResult; stepId: string }> = [];
+      if (reviewers.length > 0) {
+        await reporter.status("verifying");
+        const diff = await git.uncommittedDiff(targetDir);
+        const stepPlan = `${ctx.approvedPlan}\n\n=== 지금 검증할 단계 (${ctx.index}/${ctx.total}) ===\n${ctx.description}`;
+        reviews = await this.review(reporter, reviewers, {
+          approvedPlan: stepPlan,
+          diff,
+          cwd: targetDir,
+          attempt,
+          previousFailures: failures.slice(),
+          parentId: buildStep.id,
+          order,
+        });
+      }
 
       const passed =
-        reviews.length > 0 &&
-        (config.reviewPolicy === "any"
-          ? reviews.some((r) => r.result.passed)
-          : reviews.every((r) => r.result.passed));
+        reviewers.length === 0 ||
+        (reviews.length > 0 &&
+          (config.reviewPolicy === "any"
+            ? reviews.some((r) => r.result.passed)
+            : reviews.every((r) => r.result.passed)));
       const lastReviewStepId = reviews[reviews.length - 1]?.stepId ?? buildStep.id;
 
       // 💬 each reviewer replies to the builder with its verdict (team chat).
@@ -541,6 +702,7 @@ export class RunPipeline {
           stepLabel: tag,
           passed: r.result.passed,
           engine: r.reviewer.name,
+          agent: REVIEWER_AGENT_ID[r.reviewer.name],
           text: r.result.reason,
         });
       }
@@ -555,20 +717,29 @@ export class RunPipeline {
           orderIdx: order(),
         });
         const title = (await store.getTitle(ctx.runId)) ?? "agent-loop change";
-        const reviewerNames = reviews.map((r) => r.reviewer.name).join(", ");
-        const message = `${title} — ${tag}\n\n${ctx.description}\n\nVerified by ${reviewerNames} (attempt ${attempt}).`;
+        const reviewerNames = reviews.map((r) => r.reviewer.name).join(", ") || "검증 생략";
+        const verifiedLine =
+          reviews.length > 0
+            ? `Verified by ${reviewerNames} (attempt ${attempt}).`
+            : `No verifiers on this run (검증 생략, attempt ${attempt}).`;
+        const message = `${title} — ${tag}\n\n${ctx.description}\n\n${verifiedLine}`;
         const sha = await git.commitAll(targetDir, message);
-        await commitStep.finish("passed", `${tag} 검증 통과 후 ${sha.slice(0, 10)} 커밋.`);
+        await commitStep.finish(
+          "passed",
+          reviews.length > 0
+            ? `${tag} 검증 통과 후 ${sha.slice(0, 10)} 커밋.`
+            : `${tag} 검증 생략 — ${sha.slice(0, 10)} 커밋.`
+        );
         await reporter.log(
           "commit",
-          `${tag} 커밋 ${sha.slice(0, 10)} ✅ (${reviewerNames} 통과, ${attempt}번째 시도)`
+          `${tag} 커밋 ${sha.slice(0, 10)} ✅ (${reviews.length > 0 ? `${reviewerNames} 통과, ` : "검증 생략, "}${attempt}번째 시도)`
         );
         await reporter.chat({
           role: "system",
           attempt,
           kind: "commit",
           stepLabel: tag,
-          text: `${reviewerNames} 통과 → ${sha.slice(0, 10)} 커밋 완료.`,
+          text: `${reviews.length > 0 ? `${reviewerNames} 통과` : "검증 생략"} → ${sha.slice(0, 10)} 커밋 완료.`,
         });
         return { passed: true, lastStepId: commitStep.id, sha, failures };
       }
@@ -586,6 +757,8 @@ export class RunPipeline {
   }
 
   // Run every reviewer over the same diff in parallel, each as its own step.
+  // parentId is the build step in the normal loop, or null for a verify-only
+  // run's root-level audit.
   private async review(
     reporter: RunReporter,
     reviewers: Reviewer[],
@@ -595,7 +768,7 @@ export class RunPipeline {
       cwd: string;
       attempt: number;
       previousFailures: string[];
-      buildStepId: string;
+      parentId: string | null;
       order: () => number;
     }
   ): Promise<Array<{ reviewer: Reviewer; result: VerifyResult; stepId: string }>> {
@@ -607,8 +780,9 @@ export class RunPipeline {
           label,
           engine: reviewer.engine,
           model: reviewer.model,
+          agent: REVIEWER_AGENT_ID[reviewer.name],
           attempt: ctx.attempt,
-          parentId: ctx.buildStepId,
+          parentId: ctx.parentId,
           orderIdx: ctx.order(),
         });
         // model carries the reviewer's identity key (품질/보안/통합/빌드) so the

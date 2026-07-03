@@ -26,6 +26,8 @@ export type Run = {
   title: string;
   brief: string;
   status: string;
+  // JSON-encoded string[] of participating roster agent ids; null = 전원.
+  agents?: string | null;
   plan?: string | null;
   // JSON-encoded string[] of the decomposed plan-step descriptions (what each
   // 단계 N actually does), persisted when the plan is approved.
@@ -56,6 +58,7 @@ export type Step = {
   label: string;
   engine: string | null;
   model: string | null;
+  agent?: string | null; // roster agent id who owns this span (null on legacy rows)
   attempt: number;
   status: string; // pending | running | passed | failed | skipped
   summary: string | null;
@@ -72,6 +75,7 @@ export type ChatMsg = {
   attempt: number;
   kind: string; // build | verify | escalate | guide | commit | note
   engine?: string | null; // reviewer engine for verify turns (codex | claude | system)
+  agent?: string | null; // roster agent id of the speaker (null on legacy rows)
   toRole: string | null;
   stepLabel: string | null;
   passed: boolean | null;
@@ -94,4 +98,5 @@ export type StartRunInput = {
   brief: string;
   targetDir?: string;
   workspaceName?: string; // name a fresh workspace folder (used when targetDir is empty)
+  agents?: string[]; // participating roster agent ids; omit for the full team
 };

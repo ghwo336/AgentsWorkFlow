@@ -1,9 +1,12 @@
 import { prisma } from "@agent-loop/shared/db";
+import { parseAgents } from "@agent-loop/shared/roster";
 
 export interface CreateRunInput {
   title: string;
   brief: string;
   project: string;
+  // Participating roster agent ids; null/empty = 전원 (default team).
+  agents?: string[] | null;
 }
 
 // Persistence boundary for runs/projects. Keeps Prisma details out of the
@@ -22,6 +25,7 @@ export class RunStore {
         brief: input.brief,
         project: input.project,
         status: "planning",
+        agents: input.agents?.length ? JSON.stringify(input.agents) : null,
       },
     });
     return { id: run.id };
@@ -68,6 +72,7 @@ export class RunStore {
     plan: string | null;
     targetDir: string | null;
     steps: string[];
+    agents: string[] | null; // participating roster ids; null = 전원
   } | null> {
     const r = await prisma.run.findUnique({ where: { id: runId } });
     if (!r) return null;
@@ -80,7 +85,14 @@ export class RunStore {
         /* malformed — fall back to none */
       }
     }
-    return { status: r.status, brief: r.brief, plan: r.plan, targetDir: r.targetDir, steps };
+    return {
+      status: r.status,
+      brief: r.brief,
+      plan: r.plan,
+      targetDir: r.targetDir,
+      steps,
+      agents: parseAgents(r.agents),
+    };
   }
 
   // The plan step's id (chain parent for the first build step) and the current

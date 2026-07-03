@@ -27,6 +27,15 @@ brief ──▶ ① Plan (Claude Opus) ──▶ ★ 사람 승인 ──▶ ②
 - **Plan/Build**: Anthropic Claude Agent SDK 사용 (API 과금).
 - **Verify**: `codex` CLI를 read-only 샌드박스에서 strict 리뷰어로 실행. 사용자의 ChatGPT
   구독으로 동작하므로 실제 API 청구는 없음 — 비용은 동일 비교를 위한 **API 환산 추정치**.
+- **참여 에이전트 선택** (`Run.agents`, 어휘는 `shared/src/roster.ts`, 선택 단위는 **좌석(role×person)** — 키는 `"build:taekyung"` 형태, 현재는 1인 1좌석): run마다 팀을 고를 수
+  있고 조합이 파이프라인 모드를 정한다 —
+  - 기획(호재) 포함 + 개발: 위 그림 그대로 (계획 → 승인 → 구현/검증)
+  - 기획 제외 + 개발: 승인 없이 brief를 단일 단계로 바로 구현 (`pipeline.directBuild`)
+  - **검증만**: 프로젝트 현재 상태를 선택된 검증자들이 감사 (`pipeline.verifyOnly`; diff 없이
+    작업 디렉터리를 직접 읽는 감사 모드 프롬프트)
+  - 기획만: 계획서 작성 후 종료 (`pipeline.planOnly`)
+  - 기획+검증(개발 없음) 조합은 불가(`validateAgents`가 400). 검증자 미선택 시 리뷰 생략 후
+    바로 커밋, 호재 미참여 시 에스컬레이션 라운드 없이 바로 needs_input.
 
 ## 2. 모노레포 구조 (npm workspaces)
 
@@ -123,12 +132,13 @@ app/
 ## 5. 데이터 모델 (Prisma, SQLite)
 
 - **Project** `{ name(PK), createdAt }` — 비용 그룹핑 단위. run이 새 이름을 쓰면 upsert로 자동 생성.
-- **Run** `{ id, project, title, brief, status, plan?, targetDir?, commit?, error?, … }`
+- **Run** `{ id, project, title, brief, status, agents?, plan?, targetDir?, commit?, error?, … }`
   - `status`: `planning | awaiting_approval | building | verifying | committed | rejected | failed | cancelled`
-- **Usage** `{ engine(claude|codex), model, phase, input/output/cacheRead/cacheWrite, costUsd, stepId? }` — 한 번의 모델 호출 사용량 + 환산 비용(기록 시점 계산).
+  - `agents`: 참여 로스터 id JSON 배열(null = 전원/레거시). 조합별 파이프라인 모드는 §1 참고.
+- **Usage** `{ engine(claude|codex), model, phase, agent?, input/output/cacheRead/cacheWrite, costUsd, stepId? }` — 한 번의 모델 호출 사용량 + 환산 비용(기록 시점 계산). `agent`는 담당자 person id(hojae/juho/…) — StepHandle이 span 생성 시 받은 `agent`를 usage에 자동 스탬프. 대시보드 `/usage?view=agents`가 이걸로 에이전트별 집계(레거시 null 행은 phase로 팀 단위 폴백).
 - **Event** `{ phase, level(info|warn|error), model?, message, stepId?, ts }` — append-only 타임라인.
 - **Verdict** `{ attempt, passed, reason, diff?, raw?, stepId? }` — 리뷰어 검증 시도별 결과(거절 사유 포함).
-- **Step** `{ kind(plan|build|verify|review|test|commit), label, engine?, model?, attempt, status(pending|running|passed|failed|skipped), summary?, parentId?, startedAt, endedAt?, orderIdx }` — **에이전트 작업 span(1급 노드)**. Event(점 로그)와 달리 생명주기(시작/종료)와 부모관계를 가짐. 대시보드의 리스트/칸반/노드그래프(parentId=엣지)/타임라인(startedAt→endedAt=막대)이 **모두 이 한 데이터**로 렌더됨.
+- **Step** `{ kind(plan|build|verify|review|test|commit), label, engine?, model?, agent?, attempt, status(pending|running|passed|failed|skipped), summary?, parentId?, startedAt, endedAt?, orderIdx }` — `agent`는 span 소유자 로스터 id (대시보드 `agentForStep`이 최우선 사용; null 레거시 행은 기존 휴리스틱 폴백). ChatMsg도 동일하게 `agent` 컬럼 보유. — **에이전트 작업 span(1급 노드)**. Event(점 로그)와 달리 생명주기(시작/종료)와 부모관계를 가짐. 대시보드의 리스트/칸반/노드그래프(parentId=엣지)/타임라인(startedAt→endedAt=막대)이 **모두 이 한 데이터**로 렌더됨.
 
 모두 `Run`에 `onDelete: Cascade`로 묶임. `stepId`는 로그/사용량/판정을 특정 Step에 귀속(옵셔널, 하위호환).
 

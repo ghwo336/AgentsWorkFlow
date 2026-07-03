@@ -4,7 +4,7 @@ import { LogoMark } from "./lib/agents";
 
 export const metadata = {
   title: "Agent Loop",
-  description: "기획(호재) → 개발(태경·민재) → 검증(주호·동환) → 커밋",
+  description: "기획(호재) → 개발(태경·민재) → 검증(주호·동환·유준·성호) → 커밋",
 };
 
 export const viewport = {
@@ -25,7 +25,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <a href="/history">History</a>
           <a href="/usage">Usage</a>
           <span className="muted small pixel" style={{ marginLeft: "auto" }}>
-            호재 → 태경·민재 → 주호·동환
+            호재 → 태경·민재 → 주호·동환·유준·성호
           </span>
         </nav>
         {children}

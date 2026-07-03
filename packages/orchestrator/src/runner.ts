@@ -6,6 +6,7 @@ import { ClaudeReviewer } from "./agents/claude-reviewer.js";
 import { CodexVerifier } from "./agents/codex-agent.js";
 import { CommandReviewer } from "./agents/command-reviewer.js";
 import { QUALITY_LENS, SECURITY_LENS } from "./agents/review-policy.js";
+import { rosterOf, SEATS, type RosterRole } from "@agent-loop/shared/roster";
 import type { InterventionDecision } from "@agent-loop/shared/types";
 import type { Reviewer } from "./agents/types.js";
 import type { ApprovalDecision } from "./approval-gate.js";
@@ -21,6 +22,11 @@ export interface StartInput {
   project?: string; // logical project for grouping costs; defaults to "default"
   targetDir?: string; // existing repo to work in; omit for a fresh workspace
   workspaceName?: string; // name a fresh workspace folder instead of a random id
+  // Participating roster SEAT keys ("build:juho" — validated at the HTTP
+  // boundary). Omit = 전원. The combo decides the pipeline mode: 기획 포함 →
+  // plan→승인→build, 기획 생략 → 바로 build, 검증만 → 프로젝트 감사, 기획만 →
+  // 계획서만.
+  agents?: string[];
 }
 
 // Reduce a user-supplied workspace name to a safe single folder name — drop any
@@ -93,10 +99,12 @@ function onFatal(reporter: DbRunReporter) {
 
 export async function startRun(input: StartInput): Promise<string> {
   const project = input.project?.trim() || "default";
+  const agents = input.agents?.length ? input.agents : null;
   const { id } = await store.createRun({
     title: input.title,
     brief: input.brief,
     project,
+    agents,
   });
 
   // Precedence: explicit targetDir → per-run named workspace → project's
@@ -114,10 +122,33 @@ export async function startRun(input: StartInput): Promise<string> {
   await mkdir(targetDir, { recursive: true });
   await store.setTargetDir(id, targetDir);
 
-  // Fire and forget: produce a plan and park at awaiting_approval. The pipeline
-  // reports via events; the approval is resolved later from the DB.
+  // Fire and forget: the selected team decides the pipeline mode. The pipeline
+  // reports via events; any approval is resolved later from the DB.
   const reporter = new DbRunReporter(id);
-  pipeline.plan(id, input.brief, targetDir, reporter).catch(onFatal(reporter));
+  const roster = rosterOf(agents);
+  if (agents) {
+    const label = (role: RosterRole, title: string) => {
+      const names = SEATS.filter((s) => s.role === role && agents.includes(s.key)).map((s) => s.name);
+      return names.length ? `${title} ${names.join("·")}` : null;
+    };
+    const team = [label("plan", "기획"), label("build", "개발"), label("verify", "검증")]
+      .filter(Boolean)
+      .join(" / ");
+    await reporter.log("system", `참여 에이전트: ${team}`);
+  }
+  if (!roster.planner && roster.builderIds.length === 0) {
+    // 검증만 — 프로젝트 현재 상태 감사
+    pipeline.verifyOnly(id, input.brief, targetDir, reporter, roster).catch(onFatal(reporter));
+  } else if (roster.planner && roster.builderIds.length === 0) {
+    // 기획만 — 계획서 작성 후 종료
+    pipeline.planOnly(id, input.brief, targetDir, reporter).catch(onFatal(reporter));
+  } else if (!roster.planner) {
+    // 기획 생략 — 승인 없이 바로 구현 (검증은 선택된 만큼)
+    pipeline.directBuild(id, input.brief, targetDir, reporter).catch(onFatal(reporter));
+  } else {
+    // 기본 — 계획 → 승인 → 구현/검증
+    pipeline.plan(id, input.brief, targetDir, reporter).catch(onFatal(reporter));
+  }
 
   return id;
 }
@@ -184,8 +215,18 @@ export async function resolveInput(
 const RESUMABLE = new Set(["rejected", "failed", "needs_input"]);
 export async function retryRun(runId: string): Promise<boolean> {
   const st = await store.getResumeState(runId);
-  if (!st || !RESUMABLE.has(st.status) || !st.targetDir || !st.plan) return false;
+  if (!st || !RESUMABLE.has(st.status) || !st.targetDir) return false;
   const reporter = new DbRunReporter(runId);
+
+  // 검증 전용 run은 재개할 빌드가 없다 — 감사를 처음부터 다시 실행.
+  const roster = rosterOf(st.agents);
+  if (!roster.planner && roster.builderIds.length === 0) {
+    await reporter.log("approval", "사용자가 프로젝트 감사를 다시 실행합니다.");
+    pipeline.verifyOnly(runId, st.brief, st.targetDir, reporter, roster).catch(onFatal(reporter));
+    return true;
+  }
+
+  if (!st.plan) return false;
   await reporter.log("approval", "사용자가 작업을 다시 진행합니다 — 멈춘 지점부터 재개합니다.");
   await reporter.status("building");
   pipeline.build(runId, reporter).catch(onFatal(reporter));

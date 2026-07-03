@@ -9,7 +9,16 @@
 // cast.ts; this module owns HOW they are drawn (pixel-art SVG components).
 // cast.ts is re-exported so consumers keep one import surface.
 
-import { membersOf, ROLE_COLOR, ROLE_LABEL, type Agent, type Laptop, type Role } from "./cast";
+import {
+  agentById,
+  ROLE_COLOR,
+  ROLE_LABEL,
+  seatsOf,
+  type Agent,
+  type Laptop,
+  type Role,
+  type RosterSeat,
+} from "./cast";
 
 export * from "./cast";
 
@@ -326,17 +335,27 @@ export function AgentChip({ agent, size = 26 }: { agent: Agent; size?: number })
   );
 }
 
+// What a seat card's sub-line says: build seats run Sonnet (whoever sits
+// there), plan runs Opus, verify seats show the person's 직책 (코드 품질 등).
+function seatSubLabel(seat: RosterSeat, a: Agent): string {
+  if (seat.role === "build") return "Sonnet";
+  if (seat.role === "plan") return a.engineLabel;
+  return a.roleLabel;
+}
+
 // Team roster — styled as our little office: a back wall with a window, clock
 // and plant, then desk pods grouped by role, each teammate sitting at a
-// workstation whose monitor glows in their role color.
+// workstation whose monitor glows in their role color. Pods are built from the
+// selectable SEATS (the run-picker roster), so the office always mirrors what
+// can actually be selected for a run.
 export function TeamRoster({ activeIds }: { activeIds?: Set<string> } = {}) {
   // Three coarse pods (기획/개발/검증) so the office stays compact — per-person
   // 직책 (코드 품질/보안 검증/통합 검증/QA) is shown on each card instead of
   // splitting the verify family into its own pods (which stacked too tall).
-  const groups: { role: Role; members: Agent[] }[] = [
-    { role: "plan", members: membersOf("plan") },
-    { role: "build", members: membersOf("build") },
-    { role: "verify", members: membersOf("verify") },
+  const groups: { role: Role; seats: RosterSeat[] }[] = [
+    { role: "plan", seats: seatsOf("plan") },
+    { role: "build", seats: seatsOf("build") },
+    { role: "verify", seats: seatsOf("verify") },
   ];
   return (
     <div className="panel office">
@@ -358,11 +377,12 @@ export function TeamRoster({ activeIds }: { activeIds?: Set<string> } = {}) {
               {ROLE_LABEL[g.role]}
             </div>
             <div className="roster-members">
-              {g.members.map((a) => {
+              {g.seats.map((seat) => {
+                const a = agentById(seat.agentId);
                 const working = activeIds?.has(a.id) ?? false;
                 return (
                 <div
-                  key={a.id}
+                  key={seat.key}
                   className={`desk-seat${working ? " is-working" : ""}`}
                   title={working ? `${a.name} — 열일 중 🔥` : `${a.blurb} (${a.engineLabel})`}
                 >
@@ -371,11 +391,7 @@ export function TeamRoster({ activeIds }: { activeIds?: Set<string> } = {}) {
                     <DeskLaptop laptop={a.laptop} w={62} />
                   </div>
                   <div className="roster-name pixel">{a.name}</div>
-                  {/* 카드에는 그 사람의 직책. 파드 제목과 같은 직책(기획/개발)이면
-                      대신 엔진을 보여줘 정보가 중복되지 않게. 엔진은 툴팁에도 있음. */}
-                  <div className="roster-engine muted small">
-                    {a.roleLabel === ROLE_LABEL[a.role] ? a.engineLabel : a.roleLabel}
-                  </div>
+                  <div className="roster-engine muted small">{seatSubLabel(seat, a)}</div>
                 </div>
                 );
               })}

@@ -15,6 +15,20 @@
 
 import type { Step } from "./types";
 
+// Selection vocabulary shared with the orchestrator (seat keys, run roster
+// parsing/validation) — re-exported so client code keeps one import surface.
+// A SEAT is role×person ("build:juho"): 주호 holds a 개발 seat and a 검증 seat.
+export {
+  ALL_SEAT_KEYS,
+  parseAgents,
+  rosterOf,
+  seatsOf,
+  SEATS,
+  validateAgents,
+  type RosterRole,
+  type RosterSeat,
+} from "@agent-loop/shared/roster";
+
 export type Role = "plan" | "build" | "verify" | "system";
 
 export type Feature = "glasses" | "headset" | "spiky" | "mustache" | "none";
@@ -205,6 +219,8 @@ function roleForModel(model: string | null | undefined, phase: string | null | u
   return "system";
 }
 
+// CAST members of a visual role — used for LEGACY fallbacks (pre-stamp steps'
+// attempt rotation). The current selectable team lives in SEATS (seatsOf).
 export function membersOf(role: Role): Agent[] {
   return CAST.filter((a) => a.role === role);
 }
@@ -234,9 +250,11 @@ function verifyAgent(key: string | null | undefined, pick: number): Agent {
   return agentById(legacy[pick % legacy.length]);
 }
 
-// Steps: pick teammate by attempt (a retry hands off to the other person),
-// falling back to an id hash so it stays stable.
+// Steps: the pipeline stamps new spans with their owner's roster id (step.agent)
+// — trust it directly. Legacy spans fall back to the old heuristics: teammate by
+// attempt (a retry hands off to the other person), then an id hash.
 export function agentForStep(step: Step): Agent {
+  if (step.agent && byId[step.agent]) return byId[step.agent];
   const role = roleForKind(step.kind);
   if (role === "system") return SYSTEM_AGENT;
   const pick = step.attempt && step.attempt > 0 ? step.attempt - 1 : hashStr(step.id);
@@ -284,11 +302,18 @@ export const USER_AGENT: Agent = {
   laptop: SYSTEM_AGENT.laptop,
 };
 
-// Team-chat turn → character. role+attempt pick the SAME teammate the step
+// Team-chat turn → character. New turns carry the speaker's roster id (agent)
+// — trust it. Legacy turns: role+attempt pick the SAME teammate the step
 // avatars use (attempt parity); verify turns use their engine (codex→주호·동환,
 // claude→유준, system→성호) so the chat matches the step nodes.
-export function agentForChat(msg: { role: string; attempt?: number; engine?: string | null }): Agent {
+export function agentForChat(msg: {
+  role: string;
+  attempt?: number;
+  engine?: string | null;
+  agent?: string | null;
+}): Agent {
   if (msg.role === "user") return USER_AGENT;
+  if (msg.agent && byId[msg.agent]) return byId[msg.agent];
   if (msg.role === "plan") return membersOf("plan")[0] ?? SYSTEM_AGENT;
   const a = msg.attempt && msg.attempt > 0 ? msg.attempt - 1 : 0;
   if (msg.role === "verify") return verifyAgent(msg.engine, a);

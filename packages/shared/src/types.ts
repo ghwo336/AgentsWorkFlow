@@ -46,6 +46,9 @@ export interface ChatTurn {
   // attribute a verify turn to the right teammate now that the review fan-out
   // has multiple engines. Optional for backward compatibility.
   engine?: string | null;
+  // Roster agent id of the speaker (hojae/taekyung/…). When present the
+  // dashboard seats the turn directly; legacy turns fall back to role+attempt.
+  agent?: string | null;
   text: string;
 }
 
@@ -65,6 +68,7 @@ export interface BusEvent {
   kind?: StepKind;
   label?: string;
   engine?: string | null;
+  agent?: string | null; // roster agent id who owns the step span
   stepStatus?: StepStatus;
   summary?: string | null;
   startedAt?: string;
@@ -93,6 +97,9 @@ export interface UsageRecord {
   engine: "claude" | "codex";
   model: string;
   phase: Phase;
+  // Roster agent id this invocation belongs to (hojae/taekyung/…), for the
+  // per-agent usage view. Usually stamped by the StepHandle it runs under.
+  agent?: string | null;
   inputTokens: number;
   outputTokens: number;
   cacheRead: number;

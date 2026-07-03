@@ -1,6 +1,14 @@
 "use client";
 
-import { agentById, agentForStep, PixelAvatar, ROLE_COLOR } from "../../../lib/agents";
+import {
+  agentById,
+  agentForStep,
+  parseAgents,
+  PixelAvatar,
+  ROLE_COLOR,
+  rosterOf,
+  type Agent,
+} from "../../../lib/agents";
 import type { RunDetail, Step } from "../../../lib/types";
 import {
   FLOW_ICON,
@@ -27,11 +35,13 @@ function PlanStepTable({
   groups,
   total,
   needsInput = false,
+  fallbackBuilder,
 }: {
   descriptions: string[];
   groups: StepGroup[];
   total: number;
   needsInput?: boolean;
+  fallbackBuilder?: Agent;
 }) {
   const groupByNo = new Map(groups.map((g) => [g.no, g]));
   const count = Math.max(descriptions.length, total, groups.length);
@@ -60,7 +70,7 @@ function PlanStepTable({
         if (needsInput && st.tone === "failed") {
           st = { icon: "🚧", label: "개입 대기", tone: "failed" };
         }
-        const agent = planRowAgent(group);
+        const agent = planRowAgent(group, fallbackBuilder);
         const desc = descriptions[no - 1] ?? `단계 ${no}`;
         const showFlow = !!group && st.tone !== "pending";
         return (
@@ -124,6 +134,12 @@ function FlowPill({ step }: { step: Step }) {
 }
 
 export function RunProgress({ detail }: { detail: RunDetail }) {
+  // 이 run의 참여 로스터(좌석) — 조합이 표시할 구간(기획/단계/감사)을 결정한다.
+  const roster = rosterOf(parseAgents(detail.agents));
+  const hasPlanner = roster.planner;
+  const auditOnly = !hasPlanner && roster.builderIds.length === 0; // 검증 전용
+  const firstBuilder = roster.builderIds[0] ? agentById(roster.builderIds[0]) : undefined;
+
   const planStep = detail.steps.find((s) => s.kind === "plan") ?? null;
   const groups = groupByPlanStep(detail.steps);
   const descriptions = planStepDescriptions(detail);
@@ -135,8 +151,13 @@ export function RunProgress({ detail }: { detail: RunDetail }) {
   // 호재 is actively thinking whenever the plan step is running (or the run is
   // spinning up before the step even lands). This is the long, silent stretch
   // that felt "frozen" — so make him visibly work (fire + blink), not idle grey.
-  const planRunning = !awaiting && !planDone && !planFailed;
+  const planRunning = hasPlanner && !awaiting && !planDone && !planFailed;
   const hojae = agentById("hojae");
+
+  // 검증 전용 run: 단계 로드맵 대신 감사 리뷰 스텝들을 그대로 보여준다.
+  const auditSteps = auditOnly
+    ? detail.steps.filter((s) => s.kind === "review" || s.kind === "test" || s.kind === "verify")
+    : [];
 
   const planBadge = awaiting
     ? { icon: "⏳", label: "승인 대기", tone: "running" }
@@ -150,7 +171,9 @@ export function RunProgress({ detail }: { detail: RunDetail }) {
     <div className="panel">
       <b>진행도</b>
 
-      {/* 기획 — the plan gate lives here; 호재 blinks while awaiting approval. */}
+      {/* 기획 — the plan gate lives here; 호재 blinks while awaiting approval.
+          호재가 팀에 없으면 이 구간 자체가 없다. */}
+      {hasPlanner && (
       <div className="flow-group" style={{ marginTop: 10 }}>
         <div className="flow-group-head">
           <b>기획</b>
@@ -171,6 +194,38 @@ export function RunProgress({ detail }: { detail: RunDetail }) {
           </span>
         </div>
       </div>
+      )}
+
+      {/* 검증 전용 run — 감사에 참여한 검증자들의 리뷰를 그대로 나열. */}
+      {auditOnly && (
+        <div className="flow-group" style={{ marginTop: 10 }}>
+          <div className="flow-group-head">
+            <b>프로젝트 감사</b>
+            <span
+              className={`badge step-${
+                detail.status === "committed"
+                  ? "passed"
+                  : detail.status === "failed"
+                    ? "failed"
+                    : "running"
+              }`}
+            >
+              {detail.status === "committed"
+                ? "✅ 통과"
+                : detail.status === "failed"
+                  ? "❌ 문제 발견"
+                  : "⏳ 감사 중"}
+            </span>
+          </div>
+          <div className="flow-line">
+            {auditSteps.length === 0 ? (
+              <span className="muted small">검증자들이 프로젝트를 살펴보는 중…</span>
+            ) : (
+              auditSteps.map((s) => <FlowPill key={s.id} step={s} />)
+            )}
+          </div>
+        </div>
+      )}
 
       {planRunning && (
         <div className="muted small planning-live" style={{ margin: "10px 0 2px", textAlign: "center" }}>
@@ -188,21 +243,22 @@ export function RunProgress({ detail }: { detail: RunDetail }) {
       )}
 
       {/* 단계별 작업 — the whole roadmap as a table, from approval onward. */}
-      {(descriptions.length > 0 || groups.length > 0) && (
+      {!auditOnly && (descriptions.length > 0 || groups.length > 0) && (
         <PlanStepTable
           descriptions={descriptions}
           groups={groups}
           total={total}
           needsInput={detail.status === "needs_input"}
+          fallbackBuilder={firstBuilder}
         />
       )}
 
       {/* Approval → first build span: the table already lists every step as 대기,
-          so just note that work is kicking off. */}
-      {groups.length === 0 && planDone && !awaiting && building && (
+          so just note that work is kicking off. (기획 생략 run은 승인 없이 바로.) */}
+      {!auditOnly && groups.length === 0 && (planDone || !hasPlanner) && !awaiting && building && (
         <div className="muted small planning-live" style={{ marginTop: 10, textAlign: "center" }}>
           <span className="planning-dots" aria-hidden />
-          태경이 1단계 구현을 준비하는 중…
+          {firstBuilder?.name ?? "개발자"}가 1단계 구현을 준비하는 중…
         </div>
       )}
     </div>

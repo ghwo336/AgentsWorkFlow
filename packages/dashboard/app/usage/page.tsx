@@ -1,3 +1,4 @@
+import { agentById, PixelAvatar, ROLE_COLOR, type Agent } from "../lib/agents";
 import { orchJson } from "../lib/orch";
 import { isPriced } from "@agent-loop/shared/pricing";
 
@@ -5,6 +6,7 @@ type UsageRow = {
   engine: string;
   model: string;
   phase: string;
+  agent?: string | null;
   inputTokens: number;
   outputTokens: number;
   cacheRead: number;
@@ -22,6 +24,7 @@ type Row = {
   engine: string;
   model: string;
   phase: string;
+  agent: string | null;
   inputTokens: number;
   outputTokens: number;
   cacheRead: number;
@@ -29,6 +32,26 @@ type Row = {
   costUsd: number;
   project: string;
 };
+
+// Per-agent bucket key. New rows carry the roster id; legacy rows (recorded
+// before per-agent stamping) are bucketed by phase — plan was always 호재, but
+// build/verify can't name the exact teammate after the fact.
+function agentKeyOf(r: Row): string {
+  if (r.agent) return r.agent;
+  if (r.phase === "plan") return "hojae";
+  if (r.phase === "build") return "legacy-build";
+  return "legacy-verify";
+}
+
+// Legacy buckets render without an avatar; real ids resolve to the cast.
+const LEGACY_LABEL: Record<string, string> = {
+  "legacy-build": "개발팀 (이전 기록)",
+  "legacy-verify": "검증팀 (이전 기록)",
+};
+
+function agentOf(key: string): Agent | null {
+  return LEGACY_LABEL[key] ? null : agentById(key);
+}
 
 function tokensOf(r: Row) {
   return r.inputTokens + r.outputTokens + r.cacheRead + r.cacheWrite;
@@ -54,9 +77,10 @@ function groupBy(rows: Row[], key: (r: Row) => string): [string, Row[]][] {
 export default async function UsagePage({
   searchParams,
 }: {
-  searchParams: Promise<{ project?: string }>;
+  searchParams: Promise<{ project?: string; view?: string }>;
 }) {
-  const { project } = await searchParams;
+  const { project, view } = await searchParams;
+  const agentView = view === "agents";
 
   const usages = await orchJson<UsageRow[]>("/data/usage");
 
@@ -64,6 +88,7 @@ export default async function UsagePage({
     engine: u.engine,
     model: u.model,
     phase: u.phase,
+    agent: u.agent ?? null,
     inputTokens: u.inputTokens,
     outputTokens: u.outputTokens,
     cacheRead: u.cacheRead,
@@ -80,25 +105,39 @@ export default async function UsagePage({
 
   const byEngine = groupBy(rows, (r) => r.engine);
   const byModel = groupBy(rows, (r) => `${r.engine}__${r.model}`);
+  const byAgent = groupBy(rows, agentKeyOf);
   const byProject = groupBy(allRows, (r) => r.project);
+
+  // Tab/filter hrefs keep the other dimension's selection.
+  const href = (p?: string, v?: string) => {
+    const q = new URLSearchParams();
+    if (p) q.set("project", p);
+    if (v) q.set("view", v);
+    const s = q.toString();
+    return s ? `/usage?${s}` : "/usage";
+  };
 
   return (
     <div className="wrap">
-      {/* Project filter */}
+      {/* View tabs + project filter */}
       <div className="panel">
         <div className="row spread">
           <b>💰 토큰 사용량 &amp; 비용 (API 환산)</b>
           <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-            <Chip label="전체" href="/usage" active={!project} />
-            {projects.map((p) => (
-              <Chip
-                key={p}
-                label={p}
-                href={`/usage?project=${encodeURIComponent(p)}`}
-                active={project === p}
-              />
-            ))}
+            <Chip label="📊 모델별" href={href(project)} active={!agentView} />
+            <Chip label="👥 에이전트별" href={href(project, "agents")} active={agentView} />
           </div>
+        </div>
+        <div className="row" style={{ gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+          <Chip label="전체" href={href(undefined, agentView ? "agents" : undefined)} active={!project} />
+          {projects.map((p) => (
+            <Chip
+              key={p}
+              label={p}
+              href={href(p, agentView ? "agents" : undefined)}
+              active={project === p}
+            />
+          ))}
         </div>
         <div className="muted small" style={{ marginTop: 8 }}>
           Codex는 ChatGPT 구독으로 실행되어 실제 API 청구가 없습니다 — 아래 금액은
@@ -120,7 +159,64 @@ export default async function UsagePage({
         ))}
       </div>
 
+      {/* Per-agent breakdown (에이전트별 탭) */}
+      {agentView && (
+        <div className="panel">
+          <b>에이전트별 사용량</b>
+          <div className="table-scroll">
+            <table style={{ marginTop: 12 }}>
+              <thead>
+                <tr>
+                  <th>에이전트</th>
+                  <th>직책</th>
+                  <th style={{ textAlign: "right" }}>Input</th>
+                  <th style={{ textAlign: "right" }}>Output</th>
+                  <th style={{ textAlign: "right" }}>Cache R/W</th>
+                  <th style={{ textAlign: "right" }}>총 토큰</th>
+                  <th style={{ textAlign: "right" }}>비용</th>
+                </tr>
+              </thead>
+              <tbody>
+                {byAgent.map(([key, ar]) => {
+                  const agent = agentOf(key);
+                  return (
+                    <tr key={key}>
+                      <td>
+                        {agent ? (
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                            <PixelAvatar agent={agent} size={22} />
+                            <b style={{ color: ROLE_COLOR[agent.role] }}>{agent.name}</b>
+                          </span>
+                        ) : (
+                          <span className="muted">{LEGACY_LABEL[key] ?? key}</span>
+                        )}
+                      </td>
+                      <td className="muted small">
+                        {agent ? `${agent.roleLabel} · ${agent.engineLabel}` : "에이전트 기록 이전 데이터"}
+                      </td>
+                      <td style={{ textAlign: "right" }}>{fmtTok(sum(ar, (r) => r.inputTokens))}</td>
+                      <td style={{ textAlign: "right" }}>{fmtTok(sum(ar, (r) => r.outputTokens))}</td>
+                      <td style={{ textAlign: "right" }} className="muted">
+                        {fmtTok(sum(ar, (r) => r.cacheRead))} / {fmtTok(sum(ar, (r) => r.cacheWrite))}
+                      </td>
+                      <td style={{ textAlign: "right" }}>{fmtTok(sum(ar, tokensOf))}</td>
+                      <td style={{ textAlign: "right" }}>{fmtUsd(sum(ar, (r) => r.costUsd))}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {rows.length === 0 && <p className="muted">아직 기록된 사용량이 없습니다.</p>}
+          <div className="muted small" style={{ marginTop: 8 }}>
+            성호(빌드 검사)는 모델을 쓰지 않는 결정적 검사라 토큰이 거의 기록되지 않습니다. 과거
+            기록은 담당자 스탬프가 없어 팀 단위로 묶입니다.
+          </div>
+        </div>
+      )}
+
       {/* Per-model breakdown */}
+      {!agentView && (
       <div className="panel">
         <b>모델별 사용량</b>
         <div className="table-scroll">
@@ -167,9 +263,10 @@ export default async function UsagePage({
         </div>
         {rows.length === 0 && <p className="muted">아직 기록된 사용량이 없습니다.</p>}
       </div>
+      )}
 
       {/* Per-project breakdown (only in "all" view) */}
-      {!project && byProject.length > 0 && (
+      {!agentView && !project && byProject.length > 0 && (
         <div className="panel">
           <b>프로젝트별 비용</b>
           <div className="table-scroll">

@@ -125,11 +125,11 @@ export function planRowState(group: StepGroup | undefined): RowState {
   return { icon: "⏳", label: "진행 중", tone: "running" };
 }
 
-// Who's on the row: the actual builder once it starts, else 태경 as the default
-// upcoming assignee.
-export function planRowAgent(group: StepGroup | undefined): Agent {
+// Who's on the row: the actual builder once it starts, else the run's first
+// selected builder (default 태경 — 개발 1번 좌석) as the upcoming assignee.
+export function planRowAgent(group: StepGroup | undefined, fallback?: Agent): Agent {
   const build = group?.steps.find((s) => s.kind === "build");
-  return build ? agentForStep(build) : agentById("taekyung");
+  return build ? agentForStep(build) : (fallback ?? agentById("taekyung"));
 }
 
 // codex/infra execution failures (vs. a genuine review rejection). These mean

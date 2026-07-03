@@ -1,7 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../../lib/api";
+import {
+  agentById,
+  ALL_SEAT_KEYS,
+  PixelAvatar,
+  ROLE_COLOR,
+  ROLE_LABEL,
+  rosterOf,
+  seatsOf,
+  validateAgents,
+  type RosterRole,
+} from "../../../lib/agents";
 import { Markdown } from "../../../lib/Markdown";
 import type { ChatMessage, StartRunInput } from "../../../lib/types";
 
@@ -30,7 +41,34 @@ export function NewTaskForm({
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
+  // 참여 좌석(role×person) 선택 — 기본은 전원. 조합이 파이프라인 모드를 정한다:
+  // 기획 포함 = 계획→승인→구현, 기획 제외 = 바로 구현, 검증만 = 프로젝트 감사.
+  const [selected, setSelected] = useState<Set<string>>(new Set(ALL_SEAT_KEYS));
   const threadRef = useRef<HTMLDivElement>(null);
+
+  const rosterError = useMemo(() => validateAgents([...selected]), [selected]);
+  // 선택 조합이 어떤 모드로 도는지 한 줄 예고.
+  const rosterMode = useMemo(() => {
+    if (rosterError) return null;
+    const r = rosterOf([...selected]);
+    if (!r.planner && r.builderIds.length === 0) return "🔍 검증만 — 프로젝트 현재 상태를 감사합니다 (승인·구현 없음)";
+    if (r.planner && r.builderIds.length === 0) return "📋 기획만 — 계획서 작성 후 종료합니다";
+    if (!r.planner) {
+      return r.verifierIds.length > 0
+        ? "🔨 바로 구현 — 승인 단계 없이 구현하고 선택한 검증자가 리뷰합니다"
+        : "🔨 바로 구현 — 승인·검증 없이 구현 후 바로 커밋합니다 (주의)";
+    }
+    return r.verifierIds.length > 0 ? null : "⚠️ 검증 없이 진행 — 구현 결과를 리뷰 없이 커밋합니다";
+  }, [selected, rosterError]);
+
+  function toggleSeat(id: string) {
+    setSelected((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   // Keep the newest turn in view as the thread grows.
   useEffect(() => {
@@ -72,20 +110,21 @@ export function NewTaskForm({
       title.trim() || firstAsk.split("\n")[0].trim().slice(0, 60) || "새 작업";
     // No path input: the orchestrator runs this in the project's own folder
     // (agent-workspaces/<project>), creating/reusing it automatically.
-    const ok = await onStart({ title: derivedTitle, brief });
+    const ok = await onStart({ title: derivedTitle, brief, agents: [...selected] });
     if (ok) {
       setTitle("");
       setMessages([]);
       setInput("");
       setChatError(null);
+      setSelected(new Set(ALL_SEAT_KEYS));
     }
   }
 
   const folderName = defaultTargetDir ? defaultTargetDir.replace(/\/+$/, "").split("/").pop() : "";
   const hasChat = messages.some((m) => m.role === "user");
   // Startable as soon as there's *any* requirement text — either a sent chat
-  // turn or something typed in the box. Title is auto-derived when empty.
-  const canStart = (hasChat || !!input.trim()) && !sending;
+  // turn or something typed in the box — and the team combo is runnable.
+  const canStart = (hasChat || !!input.trim()) && !sending && !rosterError;
 
   return (
     <div className="panel">
@@ -145,6 +184,57 @@ export function NewTaskForm({
 
       <div style={{ height: 12, borderBottom: "1px solid var(--border)", marginBottom: 12 }} />
 
+      {/* 참여 에이전트 선택 — 조합에 따라 파이프라인 모드가 달라진다. */}
+      <div>
+        <b className="small">👥 참여 에이전트</b>
+        {(["plan", "build", "verify"] as RosterRole[]).map((role) => (
+          <div key={role} className="row" style={{ gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 6 }}>
+            <span className="muted small" style={{ width: 30, flex: "0 0 auto" }}>
+              {ROLE_LABEL[role]}
+            </span>
+            {seatsOf(role).map((seat) => {
+              const a = agentById(seat.agentId);
+              const on = selected.has(seat.key);
+              return (
+                <button
+                  type="button"
+                  key={seat.key}
+                  className="badge"
+                  onClick={() => toggleSeat(seat.key)}
+                  title={`${a.name} · ${role === "verify" ? a.roleLabel : ROLE_LABEL[role]} — ${on ? "참여 중, 눌러서 제외" : "제외됨, 눌러서 참여"}`}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 5,
+                    cursor: "pointer",
+                    background: "transparent",
+                    borderColor: on ? ROLE_COLOR[role] : "var(--border)",
+                    color: on ? ROLE_COLOR[role] : "var(--muted)",
+                    opacity: on ? 1 : 0.5,
+                  }}
+                >
+                  <PixelAvatar agent={a} size={16} />
+                  {a.name}
+                  <span style={{ fontSize: 10 }}>{on ? "✓" : "＋"}</span>
+                </button>
+              );
+            })}
+          </div>
+        ))}
+        {rosterError && (
+          <div className="small" style={{ color: "var(--red)", marginTop: 6 }}>
+            {rosterError}
+          </div>
+        )}
+        {rosterMode && !rosterError && (
+          <div className="muted small" style={{ marginTop: 6 }}>
+            {rosterMode}
+          </div>
+        )}
+      </div>
+
+      <div style={{ height: 12, borderBottom: "1px solid var(--border)", marginBottom: 12 }} />
+
       <div className="muted small">
         📁 이 프로젝트 폴더에서 작업합니다
         {folderName ? (
@@ -159,9 +249,9 @@ export function NewTaskForm({
       </div>
       <div style={{ height: 8 }} />
       <button type="button" onClick={startRun} disabled={!canStart}>
-        ▶ 이 내용으로 계획 시작
+        ▶ 이 팀으로 시작
       </button>
-      {!canStart && (
+      {!canStart && !rosterError && (
         <div className="muted small" style={{ marginTop: 6 }}>
           요구사항을 적어주세요. (Opus와 대화로 다듬어도 되고, 바로 시작해도 됩니다)
         </div>

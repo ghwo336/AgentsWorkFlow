@@ -2,6 +2,7 @@ import cors from "@fastify/cors";
 import Fastify from "fastify";
 import { z } from "zod";
 import { prisma } from "@agent-loop/shared/db";
+import { validateAgents } from "@agent-loop/shared/roster";
 import { bus } from "./bus.js";
 import { clarify, interveneChat } from "./chat.js";
 import { config } from "./config.js";
@@ -29,11 +30,20 @@ const StartSchema = z.object({
   project: z.string().optional(),
   targetDir: z.string().optional(),
   workspaceName: z.string().optional(),
+  // Participating roster seat keys; omit ENTIRELY for the full team. When the
+  // field is present it is validated strictly — empty lists and unknown keys
+  // are rejected (never silently coerced to "전원"), and the combo must be
+  // runnable — e.g. 기획+검증 without 개발 is rejected.
+  agents: z.array(z.string()).optional(),
 });
 app.post("/runs", async (req, reply) => {
   const parsed = StartSchema.safeParse(req.body);
   if (!parsed.success) {
     return reply.code(400).send({ error: parsed.error.flatten() });
+  }
+  if (parsed.data.agents !== undefined) {
+    const invalid = validateAgents(parsed.data.agents);
+    if (invalid) return reply.code(400).send({ error: invalid });
   }
   const id = await startRun(parsed.data);
   return reply.code(201).send({ id });

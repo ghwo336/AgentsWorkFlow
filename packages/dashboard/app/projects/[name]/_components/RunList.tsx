@@ -1,3 +1,12 @@
+import {
+  agentById,
+  parseAgents,
+  PixelAvatar,
+  ROLE_COLOR,
+  ROLE_LABEL,
+  seatsOf,
+  type RosterRole,
+} from "../../../lib/agents";
 import type { Run, RunDetail } from "../../../lib/types";
 import { StatusBadge } from "./StatusBadge";
 
@@ -33,6 +42,18 @@ export function RunList({
 }
 
 export function RunDetailCard({ detail }: { detail: RunDetail }) {
+  // 이 run의 참여 좌석 (null = 전원 — 표시는 선택 run에만), 역할별로 묶어서.
+  const seatKeys = parseAgents(detail.agents);
+  const team = seatKeys
+    ? (["plan", "build", "verify"] as RosterRole[])
+        .map((role) => ({
+          role,
+          members: seatsOf(role)
+            .filter((s) => seatKeys.includes(s.key))
+            .map((s) => agentById(s.agentId)),
+        }))
+        .filter((g) => g.members.length > 0)
+    : null;
   return (
     <div className="panel">
       <div className="row spread">
@@ -42,6 +63,26 @@ export function RunDetailCard({ detail }: { detail: RunDetail }) {
       <div className="muted small" style={{ marginTop: 4 }}>
         {detail.targetDir}
       </div>
+      {team && (
+        <div className="row" style={{ gap: 10, flexWrap: "wrap", marginTop: 6, alignItems: "center" }}>
+          <span className="muted small">👥 참여:</span>
+          {team.map((g) => (
+            <span key={g.role} className="small" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+              <span className="muted small">{ROLE_LABEL[g.role]}</span>
+              {g.members.map((a) => (
+                <span
+                  key={a.id}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 3, color: ROLE_COLOR[g.role] }}
+                  title={`${a.name} · ${g.role === "verify" ? a.roleLabel : ROLE_LABEL[g.role]}`}
+                >
+                  <PixelAvatar agent={a} size={16} />
+                  {a.name}
+                </span>
+              ))}
+            </span>
+          ))}
+        </div>
+      )}
       {detail.commit && (
         <div className="small" style={{ marginTop: 6 }}>
           ✅ committed <code>{detail.commit.slice(0, 10)}</code>

@@ -20,6 +20,7 @@ export async function addChat(runId: string, turn: ChatTurn): Promise<void> {
       attempt: turn.attempt,
       kind: turn.kind,
       engine: turn.engine ?? null,
+      agent: turn.agent ?? null,
       toRole: turn.toRole ?? null,
       stepLabel: turn.stepLabel ?? null,
       passed: turn.passed ?? null,
@@ -65,6 +66,9 @@ export interface CreateStepInput {
   label: string;
   engine?: string | null;
   model?: string | null;
+  // Roster agent id who owns this span. Persisted on the Step (the dashboard
+  // seats the span with this teammate) AND used to stamp the span's usage rows.
+  agent?: string | null;
   attempt?: number;
   orderIdx?: number;
 }
@@ -80,6 +84,7 @@ function publishStep(
     label: string;
     engine: string | null;
     model: string | null;
+    agent: string | null;
     attempt: number;
     status: string;
     summary: string | null;
@@ -98,6 +103,7 @@ function publishStep(
     label: row.label,
     engine: row.engine,
     model: row.model,
+    agent: row.agent,
     attempt: row.attempt,
     stepStatus: row.status as StepStatus,
     summary: row.summary,
@@ -112,11 +118,13 @@ export async function createStep(runId: string, input: CreateStepInput): Promise
   const row = await prisma.step.create({
     data: {
       runId,
-      parentId: input.parentId ?? null,
+      // "" (no plan step, e.g. 기획 생략 run) is not a real parent — store null.
+      parentId: input.parentId || null,
       kind: input.kind,
       label: input.label,
       engine: input.engine ?? null,
       model: input.model ?? null,
+      agent: input.agent ?? null,
       attempt: input.attempt ?? 1,
       orderIdx: input.orderIdx ?? 0,
       status: "running",
@@ -165,6 +173,7 @@ export async function recordUsage(runId: string, u: UsageRecord, stepId?: string
       engine: u.engine,
       model: u.model,
       phase: u.phase,
+      agent: u.agent ?? null,
       inputTokens: u.inputTokens,
       outputTokens: u.outputTokens,
       cacheRead: u.cacheRead,

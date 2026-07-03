@@ -65,7 +65,9 @@ export class DbRunReporter implements RunReporter {
     return {
       id,
       log: (phase, message, opts = {}) => logEvent(runId, phase, message, { ...opts, stepId: id }),
-      usage: (u) => recordUsage(runId, u, id),
+      // Every usage record emitted under this span inherits the span's owner,
+      // so per-agent cost attribution needs no plumbing inside the agents.
+      usage: (u) => recordUsage(runId, { ...u, agent: u.agent ?? input.agent }, id),
       verdict: (attempt, passed, reason, diff, raw) =>
         recordVerdict(runId, attempt, passed, reason, diff, raw, id),
       finish: (status, summary) => updateStep(id, { status, summary, end: true }),
