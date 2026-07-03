@@ -6,6 +6,8 @@
 > ⚠️ **코드를 추가/수정하려면 [docs/CODE-QUALITY.md](docs/CODE-QUALITY.md)(코드 품질
 > 행동양식)도 반드시 읽으세요.** 아키텍처 원칙(SOLID)·디자인 패턴·작업 절차·금지
 > 사항이 정리되어 있습니다.
+>
+> 📁 파일 단위의 전체 구조 지도는 [docs/PROJECT-STRUCTURE.md](docs/PROJECT-STRUCTURE.md) 참고.
 
 ## 1. 한 줄 요약
 
