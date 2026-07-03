@@ -9,6 +9,7 @@ import type {
   UsageRecord,
 } from "@agent-loop/shared/types";
 import { bus } from "./bus.js";
+import { updateRunStatus } from "./run-store.js";
 
 // Append a team-chat turn: persist to DB + broadcast so the dashboard's chat
 // panel updates live (any runId event triggers a detail reload).
@@ -149,13 +150,14 @@ export async function updateStep(
   publishStep(row, new Date());
 }
 
-// Transition a run's status: persist + broadcast.
+// Transition a run's status: persist (via run-store — the Run table's single
+// writer) + broadcast.
 export async function setStatus(
   runId: string,
   status: RunStatus,
   extra: Partial<{ plan: string; commit: string; error: string; targetDir: string }> = {}
 ) {
-  await prisma.run.update({ where: { id: runId }, data: { status, ...extra } });
+  await updateRunStatus(runId, status, extra);
   bus.publish({
     type: "status",
     runId,

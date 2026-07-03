@@ -1,5 +1,6 @@
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import { queryFinalText } from "./agents/claude-query.js";
 import { config } from "./config.js";
+import { RunStore } from "./run-store.js";
 
 // A pre-plan requirements conversation. Before any run exists, the user chats
 // with Opus to nail down what they actually want; the resulting transcript
@@ -7,6 +8,8 @@ import { config } from "./config.js";
 // message history and sends the whole thread each turn — so no run/reporter is
 // involved and the endpoint stays a thin request→reply.
 export type ChatMessage = { role: "user" | "assistant"; content: string };
+
+const store = new RunStore();
 
 const CLARIFY_SYSTEM = `당신은 자동 개발 파이프라인의 "요구사항 정리" 도우미입니다.
 사용자가 만들고 싶은 것을 대화로 구체화하도록 돕는 것이 목표입니다.
@@ -28,28 +31,12 @@ export async function clarify(messages: ChatMessage[]): Promise<string> {
     .map((m) => `${m.role === "user" ? "사용자" : "도우미"}: ${m.content}`)
     .join("\n\n");
   const prompt = `지금까지의 대화:\n\n${transcript}\n\n위 대화에 이어, 도우미로서 다음 응답을 작성하세요.`;
-
-  let finalText = "";
-  const response = query({
-    prompt,
-    options: {
-      model: config.planModel,
-      permissionMode: "plan",
-      systemPrompt: CLARIFY_SYSTEM,
-    },
+  const { text } = await queryFinalText(prompt, {
+    model: config.planModel,
+    permissionMode: "plan",
+    systemPrompt: CLARIFY_SYSTEM,
   });
-
-  for await (const msg of response as AsyncIterable<any>) {
-    if (msg.type === "assistant") {
-      for (const block of msg.message?.content ?? []) {
-        if (block.type === "text" && block.text.trim()) finalText = block.text;
-      }
-    } else if (msg.type === "result") {
-      if (typeof msg.result === "string" && msg.result.trim()) finalText = msg.result;
-    }
-  }
-
-  return finalText.trim();
+  return text;
 }
 
 const INTERVENE_CHAT_SYSTEM = `당신은 자동 개발 팀의 리드 엔지니어 "호재"(Opus)입니다.
@@ -65,10 +52,30 @@ const INTERVENE_CHAT_SYSTEM = `당신은 자동 개발 팀의 리드 엔지니�
 - 파일을 수정하지 말고 대화만 하세요. 사용자가 "지침대로 다시 시도"를 고르면 그때
   빌더가 실제로 고칩니다.`;
 
-// The user↔호재 discussion at a needs_input gate. `context` is a prebuilt summary
-// of the stuck situation (plan + stuck step + failure reasons + diff), and
-// `messages` is the client-held chat history. Returns 호재's next reply.
-export async function interveneChat(context: string, messages: ChatMessage[]): Promise<string> {
+// The user↔호재 discussion at a needs_input gate for a specific run. Assembles
+// the stuck context (plan + stuck step + park reason + recent rejections) from
+// the store, then continues the client-held thread. Returns null when the run
+// doesn't exist (→ 404 at the HTTP layer).
+export async function interveneChatForRun(
+  runId: string,
+  messages: ChatMessage[]
+): Promise<string | null> {
+  const stuck = await store.getStuckContext(runId);
+  if (!stuck) return null;
+
+  const context = [
+    `## 승인된 계획\n${(stuck.plan ?? "(없음)").slice(0, 4000)}`,
+    stuck.steps.length
+      ? `## 막힌 단계 (${stuck.stuckIdx + 1}/${stuck.steps.length})\n${stuck.steps[stuck.stuckIdx] ?? "(알 수 없음)"}`
+      : "",
+    stuck.error ? `## 중단 사유\n${stuck.error}` : "",
+    stuck.recentFailures.length
+      ? `## 최근 검증 실패 사유\n${stuck.recentFailures.map((r, i) => `${i + 1}. ${r}`).join("\n\n")}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
   const transcript = messages
     .map((m) => `${m.role === "user" ? "리더" : "호재"}: ${m.content}`)
     .join("\n\n");
@@ -82,19 +89,10 @@ export async function interveneChat(context: string, messages: ChatMessage[]): P
     `위 대화에 이어, 리드 호재로서 다음 응답을 작성하세요.`,
   ].join("\n");
 
-  let finalText = "";
-  const response = query({
-    prompt,
-    options: { model: config.planModel, permissionMode: "plan", systemPrompt: INTERVENE_CHAT_SYSTEM },
+  const { text } = await queryFinalText(prompt, {
+    model: config.planModel,
+    permissionMode: "plan",
+    systemPrompt: INTERVENE_CHAT_SYSTEM,
   });
-  for await (const msg of response as AsyncIterable<any>) {
-    if (msg.type === "assistant") {
-      for (const block of msg.message?.content ?? []) {
-        if (block.type === "text" && block.text.trim()) finalText = block.text;
-      }
-    } else if (msg.type === "result") {
-      if (typeof msg.result === "string" && msg.result.trim()) finalText = msg.result;
-    }
-  }
-  return finalText.trim();
+  return text;
 }

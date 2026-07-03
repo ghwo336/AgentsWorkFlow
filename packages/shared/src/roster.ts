@@ -85,6 +85,19 @@ export function rosterOf(keys: string[] | null | undefined): RunRoster {
   };
 }
 
+// Which pipeline a roster runs. THE single place this combo logic lives —
+// runner 분기, 검증 규칙, 대시보드의 모드 표시가 전부 여기서 파생된다.
+//   full       기획 → 승인 → 구현/검증 (기본)
+//   direct     기획 생략, 승인 없이 바로 구현
+//   verifyOnly 검증자만 — 프로젝트 현재 상태 감사
+//   planOnly   기획만 — 계획서 작성 후 종료
+export type RunMode = "full" | "direct" | "verifyOnly" | "planOnly";
+
+export function runModeOf(roster: RunRoster): RunMode {
+  if (roster.builderIds.length > 0) return roster.planner ? "full" : "direct";
+  return roster.planner ? "planOnly" : "verifyOnly";
+}
+
 // Sanitize a PLANNER-recommended team (호재의 ```team 블록) into an applyable
 // selection: unknown keys dropped, 호재 자신은 항상 포함(에스컬레이션 유지),
 // 개발자가 한 명도 안 남으면 적용 불가(null) — 계획 기반 run은 구현이 있어야 한다.
@@ -131,7 +144,9 @@ export function validateAgents(keys: string[]): string | null {
   const unknown = keys.filter((k) => !byKey.has(k));
   if (unknown.length > 0) return `알 수 없는 에이전트입니다: ${unknown.join(", ")}`;
   const r = rosterOf(keys);
-  if (r.builderIds.length === 0 && r.planner && r.verifierIds.length > 0) {
+  // planOnly는 기획서만 쓰고 끝난다 — 검증자가 같이 있으면 그 검증은 영영 안
+  // 돌므로 실행 불가능한 조합으로 거절한다.
+  if (runModeOf(r) === "planOnly" && r.verifierIds.length > 0) {
     return "개발 에이전트 없이 기획과 검증을 함께 선택할 수 없습니다 — 개발자를 추가하거나 하나만 선택하세요.";
   }
   return null;

@@ -7,6 +7,16 @@ export interface AgentResult {
   isError: boolean;
 }
 
+// A plan, already parsed into structure by the planner ADAPTER — the fenced
+// ```steps/```team output format is the adapter's contract with its prompt
+// (agents/plan-format.ts); the pipeline only consumes this structure.
+export interface PlanResult extends AgentResult {
+  // text = 승인 UI용 계획 본문 (machine 블록 제거됨)
+  steps: string[];
+  devs: (string | null)[]; // 단계별 담당 개발자 person id (미배정 = null)
+  team: string[] | null; // 자동 배치 run에서 호재가 추천한 좌석 키
+}
+
 export interface PlanRequest {
   brief: string;
   cwd: string;
@@ -82,7 +92,7 @@ export interface VerifyResult {
 // and any engine can be swapped behind these interfaces without touching the
 // orchestration logic (DIP/OCP).
 export interface Planner {
-  plan(req: PlanRequest, reporter: PhaseReporter): Promise<AgentResult>;
+  plan(req: PlanRequest, reporter: PhaseReporter): Promise<PlanResult>;
   // Diagnose a repeatedly-failing step and return actionable fix guidance for
   // the builder (read-only; does not touch files).
   intervene(req: InterveneRequest, reporter: PhaseReporter): Promise<AgentResult>;
@@ -90,10 +100,6 @@ export interface Planner {
 
 export interface Builder {
   build(req: BuildRequest, reporter: PhaseReporter): Promise<AgentResult>;
-}
-
-export interface Verifier {
-  verify(req: VerifyRequest): Promise<VerifyResult>;
 }
 
 // A named reviewer that inspects the built diff and returns pass/fail. The

@@ -77,8 +77,8 @@ agent-loop/
 |---|---|
 | `index.ts` | Fastify 서버. HTTP 라우트(`POST /runs`, `POST /runs/:id/approve`, `GET /events` SSE)와 검증(zod)만 담당 |
 | `runner.ts` | **컴포지션 루트**. 구체 구현(ClaudePlanner/Builder, `reviewers[]`(CodexVerifier + 선택적 CommandReviewer), Git 등)을 한 곳에서 조립하고 `startRun`/`resolveApproval`만 export. **엔진/리뷰어 교체 = 여기 한 줄 수정** |
-| `pipeline.ts` | `RunPipeline` — plan→approve→build/**review 팬아웃**/commit **상태머신**. 정책만 담고 부수효과는 주입된 추상화로 호출. 단계별 메서드(`plan`/`approve`/`buildVerifyCommit`/`review`)로 분리. 각 국면을 **Step(작업 span)** 으로 방출 |
-| `agents/types.ts` | `Planner` · `Builder` · `Verifier` · `Reviewer` 인터페이스(ISP). 요청/결과 타입 |
+| `pipeline/` | 실행 모드별 모듈: `full.ts`(계획→승인→단계 루프+에스컬레이션) · `direct-build.ts` · `plan-only.ts` · `verify-only.ts`(감사). 공유 협력자는 `shared.ts`(리뷰 팬아웃/계획 스텝), 팀 스태핑 정책은 `team-staffing.ts`, `index.ts`는 `RunPipeline` 파사드(deps 바인딩+위임만). 각 국면을 **Step(작업 span)** 으로 방출 |
+| `agents/types.ts` | `Planner` · `Builder` · `Reviewer` 인터페이스(ISP). 요청/결과 타입 (`PlanResult` = 어댑터가 파싱까지 마친 계획) |
 | `agents/claude-agent.ts` | `ClaudePlanner`, `ClaudeBuilder` — Claude Agent SDK 스트리밍 어댑터. `PhaseReporter`(log+usage)만 의존 |
 | `agents/review-policy.ts` | **모든 LLM 리뷰어가 공유하는 판정 규칙서 + 렌즈들** — 중대 결함 일괄 보고, 범위 게이트, 이전 거절 이력(수렴 규칙)이 공용이고, `QUALITY_LENS`(공학 원칙)/`SECURITY_LENS`(보안)로 리뷰어별 관점을 분리. 리뷰 기준 변경은 여기 한 곳 |
 | `agents/codex-agent.ts` | `CodexVerifier` — `codex exec` 호출 + 토큰/판정 파싱. **렌즈별로 여러 번 인스턴스화**: `품질`(주호 — 정확성+SOLID/DRY/계층) · `보안`(동환 — 보안 전담 감사) |
@@ -87,7 +87,9 @@ agent-loop/
 | `agents/command-reviewer.ts` | `CommandReviewer` — 셸 명령(TEST_CMD) 실행, exit 0 = PASS. 테스트 러너를 리뷰 팬아웃에 합류시키는 `Reviewer` |
 | `approval-gate.ts` | `ApprovalGate` — 사람 승인을 기다리는 async 게이트(runId→resolver) |
 | `reporter.ts` | `PhaseReporter`(log/usage) ⊂ `RunReporter`/`StepHandle`. `DbRunReporter` — runId 바인딩 파사드. `startStep()`→step에 바인딩된 `StepHandle`(log/usage/verdict/finish) |
-| `run-store.ts` | `RunStore` — run/project 영속화(Prisma) 경계 |
+| `run-store.ts` | `RunStore` — run/project 영속화(Prisma) 경계. **Run 테이블 쓰기는 이 모듈에만** (`updateRunStatus`를 events.setStatus가 위임 호출) |
+| `workspace-path.ts` | 워크스페이스 경로 정책 (명시 경로 → 이름 워크스페이스 → 프로젝트 기본 폴더) |
+| `agents/claude-query.ts` | 비스트리밍 SDK 호출 공용 헬퍼 (chat/리뷰어가 사용; 스트리밍은 claude-agent만) |
 | `git.ts` | git 함수들 + `GitOps` 인터페이스 + `git` 구현 객체 |
 | `events.ts` | 저수준 영속화+SSE 브로드캐스트(`logEvent`/`setStatus`/`recordUsage`/`recordVerdict`/`createStep`/`updateStep`) |
 | `bus.ts` | 인프로세스 pub/sub(EventEmitter). SSE 라우트가 구독, reporter가 발행 |

@@ -23,11 +23,13 @@ export {
   ALL_SEAT_KEYS,
   parseAgents,
   rosterOf,
+  runModeOf,
   seatsOf,
   SEATS,
   validateAgents,
   type RosterRole,
   type RosterSeat,
+  type RunMode,
 } from "@agent-loop/shared/roster";
 
 export type Role = "plan" | "build" | "verify" | "system";

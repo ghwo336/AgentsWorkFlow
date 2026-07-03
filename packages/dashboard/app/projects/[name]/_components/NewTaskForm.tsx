@@ -2,18 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../../lib/api";
-import {
-  agentById,
-  ALL_SEAT_KEYS,
-  PixelAvatar,
-  ROLE_COLOR,
-  ROLE_LABEL,
-  rosterOf,
-  seatsOf,
-  validateAgents,
-  type RosterRole,
-} from "../../../lib/agents";
+import { ALL_SEAT_KEYS, validateAgents } from "../../../lib/agents";
 import { Markdown } from "../../../lib/Markdown";
+import { TeamPicker, type TeamMode } from "./TeamPicker";
 import type { ChatMessage, StartRunInput } from "../../../lib/types";
 
 // Turn the clarification thread into the run's brief. The planner reads this as
@@ -42,9 +33,9 @@ export function NewTaskForm({
   const [sending, setSending] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
   // 팀 구성 모드: "auto" = 호재가 기획하면서 프로젝트에 맞는 팀을 배치(기본),
-  // "manual" = 좌석(role×person)을 직접 선택. 조합이 파이프라인 모드를 정한다:
-  // 기획 포함 = 계획→승인→구현, 기획 제외 = 바로 구현, 검증만 = 프로젝트 감사.
-  const [teamMode, setTeamMode] = useState<"auto" | "manual">("auto");
+  // "manual" = 좌석(role×person)을 직접 선택. UI는 TeamPicker가 담당하고 이
+  // 폼은 상태와 "시작 가능 여부"만 소유한다.
+  const [teamMode, setTeamMode] = useState<TeamMode>("auto");
   const [selected, setSelected] = useState<Set<string>>(new Set(ALL_SEAT_KEYS));
   const threadRef = useRef<HTMLDivElement>(null);
 
@@ -52,19 +43,6 @@ export function NewTaskForm({
     () => (teamMode === "manual" ? validateAgents([...selected]) : null),
     [teamMode, selected]
   );
-  // 선택 조합이 어떤 모드로 도는지 한 줄 예고.
-  const rosterMode = useMemo(() => {
-    if (teamMode === "auto" || rosterError) return null;
-    const r = rosterOf([...selected]);
-    if (!r.planner && r.builderIds.length === 0) return "🔍 검증만 — 프로젝트 현재 상태를 감사합니다 (승인·구현 없음)";
-    if (r.planner && r.builderIds.length === 0) return "📋 기획만 — 계획서 작성 후 종료합니다";
-    if (!r.planner) {
-      return r.verifierIds.length > 0
-        ? "🔨 바로 구현 — 승인 단계 없이 구현하고 선택한 검증자가 리뷰합니다"
-        : "🔨 바로 구현 — 승인·검증 없이 구현 후 바로 커밋합니다 (주의)";
-    }
-    return r.verifierIds.length > 0 ? null : "⚠️ 검증 없이 진행 — 구현 결과를 리뷰 없이 커밋합니다";
-  }, [teamMode, selected, rosterError]);
 
   function toggleSeat(id: string) {
     setSelected((cur) => {
@@ -196,88 +174,13 @@ export function NewTaskForm({
       <div style={{ height: 12, borderBottom: "1px solid var(--border)", marginBottom: 12 }} />
 
       {/* 팀 구성 — 기본은 호재가 기획 내용에 맞춰 배치, 원하면 직접 선택. */}
-      <div>
-        <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <b className="small">👥 팀 구성</b>
-          <button
-            type="button"
-            className="badge"
-            onClick={() => setTeamMode("auto")}
-            style={{
-              cursor: "pointer",
-              background: "transparent",
-              borderColor: teamMode === "auto" ? "var(--accent)" : "var(--border)",
-              color: teamMode === "auto" ? "var(--accent)" : "var(--muted)",
-            }}
-          >
-            🤖 호재가 배치 (추천)
-          </button>
-          <button
-            type="button"
-            className="badge"
-            onClick={() => setTeamMode("manual")}
-            style={{
-              cursor: "pointer",
-              background: "transparent",
-              borderColor: teamMode === "manual" ? "var(--accent)" : "var(--border)",
-              color: teamMode === "manual" ? "var(--accent)" : "var(--muted)",
-            }}
-          >
-            🎯 직접 선택
-          </button>
-        </div>
-        {teamMode === "auto" && (
-          <div className="muted small" style={{ marginTop: 6 }}>
-            호재가 기획하면서 프로젝트 성격(웹/서버/iOS/Android/RN)에 맞는 개발자와
-            검증자를 골라 배치합니다 — 계획 승인 화면에서 팀을 확인할 수 있어요.
-          </div>
-        )}
-        {teamMode === "manual" &&
-        (["plan", "build", "verify"] as RosterRole[]).map((role) => (
-          <div key={role} className="row" style={{ gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 6 }}>
-            <span className="muted small" style={{ width: 30, flex: "0 0 auto" }}>
-              {ROLE_LABEL[role]}
-            </span>
-            {seatsOf(role).map((seat) => {
-              const a = agentById(seat.agentId);
-              const on = selected.has(seat.key);
-              return (
-                <button
-                  type="button"
-                  key={seat.key}
-                  className="badge"
-                  onClick={() => toggleSeat(seat.key)}
-                  title={`${a.name} · ${seat.specialty ?? a.roleLabel} — ${on ? "참여 중, 눌러서 제외" : "제외됨, 눌러서 참여"}`}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 5,
-                    cursor: "pointer",
-                    background: "transparent",
-                    borderColor: on ? ROLE_COLOR[role] : "var(--border)",
-                    color: on ? ROLE_COLOR[role] : "var(--muted)",
-                    opacity: on ? 1 : 0.5,
-                  }}
-                >
-                  <PixelAvatar agent={a} size={16} />
-                  {a.name}
-                  <span style={{ fontSize: 10 }}>{on ? "✓" : "＋"}</span>
-                </button>
-              );
-            })}
-          </div>
-        ))}
-        {rosterError && (
-          <div className="small" style={{ color: "var(--red)", marginTop: 6 }}>
-            {rosterError}
-          </div>
-        )}
-        {rosterMode && !rosterError && (
-          <div className="muted small" style={{ marginTop: 6 }}>
-            {rosterMode}
-          </div>
-        )}
-      </div>
+      <TeamPicker
+        mode={teamMode}
+        selected={selected}
+        error={rosterError}
+        onModeChange={setTeamMode}
+        onToggleSeat={toggleSeat}
+      />
 
       <div style={{ height: 12, borderBottom: "1px solid var(--border)", marginBottom: 12 }} />
 

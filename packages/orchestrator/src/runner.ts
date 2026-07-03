@@ -1,21 +1,20 @@
-import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
 import { BuildGateReviewer } from "./agents/build-gate.js";
 import { ClaudeBuilder, ClaudePlanner } from "./agents/claude-agent.js";
 import { ClaudeReviewer } from "./agents/claude-reviewer.js";
 import { CodexVerifier } from "./agents/codex-agent.js";
 import { CommandReviewer } from "./agents/command-reviewer.js";
-import { loadHarness } from "./agents/harness.js";
+import { lensWithHarness, loadHarness } from "./agents/harness.js";
 import { QUALITY_LENS, SECURITY_LENS } from "./agents/review-policy.js";
-import { describeTeam, rosterOf, seatsOf } from "@agent-loop/shared/roster";
+import { describeTeam, rosterOf, runModeOf, seatsOf } from "@agent-loop/shared/roster";
 import type { InterventionDecision } from "@agent-loop/shared/types";
 import type { Reviewer } from "./agents/types.js";
 import type { ApprovalDecision } from "./approval-gate.js";
 import { config } from "./config.js";
 import { git } from "./git.js";
-import { RunPipeline } from "./pipeline.js";
+import { RunPipeline } from "./pipeline/index.js";
 import { DbRunReporter } from "./reporter.js";
 import { RunStore } from "./run-store.js";
+import { resolveTargetDir } from "./workspace-path.js";
 
 export interface StartInput {
   title: string;
@@ -31,41 +30,15 @@ export interface StartInput {
   agents?: string[];
 }
 
-// Reduce a user-supplied workspace name to a safe single folder name — drop any
-// path separators (no escaping workspacesDir) and leading dots, keep it tidy.
-function sanitizeWorkspaceName(name: string): string {
-  const base = name.trim().split(/[\\/]/).pop() ?? "";
-  return base.replace(/[^a-zA-Z0-9._-]/g, "-").replace(/^\.+/, "");
-}
-
-// A readable, filesystem-safe folder name from a project name — but Unicode-
-// friendly (keeps Korean etc.), unlike sanitizeWorkspaceName. Only strips path
-// separators / control / illegal chars and leading dots so "투두리스트" stays
-// "투두리스트". Returns "" if nothing usable is left (caller falls back).
-function projectDirName(project: string): string {
-  const base = project.trim().split(/[\\/]/).pop() ?? "";
-  return base
-    // eslint-disable-next-line no-control-regex
-    .replace(/[\x00-\x1f<>:"|?*]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/^\.+/, "")
-    .trim();
-}
-
 // ── Composition root ───────────────────────────────────────────────────────
 // The only place that knows the concrete implementations; everything below the
 // pipeline depends on abstractions. Swapping an engine = changing one line here.
 const store = new RunStore();
 
 // Per-agent harnesses (agents-config/<agentId>.md) — each teammate's personal
-// specialty rules, appended to their shared role prompt. Missing file = no-op.
+// specialty rules, appended to their shared role prompt (system prompt or
+// reviewer lens; both formats come from agents/harness.ts). Missing file = no-op.
 const harnessOf = (agentId: string) => loadHarness(agentId);
-// A codex reviewer's harness rides in its lens (codex has no separate system
-// prompt slot in our adapter).
-const lensWith = (lens: string[], agentId: string, name: string): string[] => {
-  const h = harnessOf(agentId);
-  return h ? [...lens, "", `=== ${name}의 개인 하네스 (추가 규칙) ===`, h] : lens;
-};
 
 // Reviewer fan-out. Add a reviewer here (another engine, a second code
 // reviewer, a linter) and it shows up as a parallel node — the pipeline is
@@ -79,11 +52,11 @@ const lensWith = (lens: string[], agentId: string, name: string): string[] => {
 const reviewers: Reviewer[] = [
   new CodexVerifier(config.verdictSchemaPath, config.codexModel, {
     name: "품질",
-    lens: lensWith(QUALITY_LENS, "juho", "주호"),
+    lens: lensWithHarness(QUALITY_LENS, harnessOf("juho"), "주호"),
   }),
   new CodexVerifier(config.verdictSchemaPath, config.codexModel, {
     name: "보안",
-    lens: lensWith(SECURITY_LENS, "donghwan", "동환"),
+    lens: lensWithHarness(SECURITY_LENS, harnessOf("donghwan"), "동환"),
   }),
   new ClaudeReviewer(config.reviewModel, harnessOf("yujun")),
   new BuildGateReviewer(),
@@ -133,19 +106,15 @@ export async function startRun(input: StartInput): Promise<string> {
     autoTeam,
   });
 
-  // Precedence: explicit targetDir → per-run named workspace → project's
-  // remembered default → the project's own folder (agent-workspaces/<project>).
-  // In the last case we persist it as the project default so every run in the
-  // project lands in — and accumulates within — one folder, with no path input.
-  const named = input.workspaceName ? sanitizeWorkspaceName(input.workspaceName) : "";
-  let targetDir = input.targetDir?.trim() || "";
-  if (!targetDir && named) targetDir = join(config.workspacesDir, named);
-  if (!targetDir) targetDir = (await store.getProjectDefaultDir(project)) || "";
-  if (!targetDir) {
-    targetDir = join(config.workspacesDir, projectDirName(project) || id);
-    await store.setProjectDefaultDir(project, targetDir); // remember it for next time
-  }
-  await mkdir(targetDir, { recursive: true });
+  // Where this run works — the path policy lives in workspace-path.ts.
+  const targetDir = await resolveTargetDir({
+    store,
+    workspacesDir: config.workspacesDir,
+    project,
+    runId: id,
+    targetDir: input.targetDir,
+    workspaceName: input.workspaceName,
+  });
   await store.setTargetDir(id, targetDir);
 
   // Fire and forget: the selected team decides the pipeline mode. The pipeline
@@ -157,24 +126,25 @@ export async function startRun(input: StartInput): Promise<string> {
   } else {
     await reporter.log("system", "팀 미지정 — 호재가 기획하면서 알맞은 팀을 배치합니다.");
   }
-  if (!roster.planner && roster.builderIds.length === 0) {
-    // 검증만 — 프로젝트 현재 상태 감사
-    pipeline.verifyOnly(id, input.brief, targetDir, reporter, roster).catch(onFatal(reporter));
-  } else if (roster.planner && roster.builderIds.length === 0) {
-    // 기획만 — 계획서 작성 후 종료
-    pipeline.planOnly(id, input.brief, targetDir, reporter).catch(onFatal(reporter));
-  } else if (!roster.planner) {
-    // 기획 생략 — 승인 없이 바로 구현 (검증은 선택된 만큼)
-    pipeline.directBuild(id, input.brief, targetDir, reporter).catch(onFatal(reporter));
-  } else {
-    // 기본 — 계획 → 승인 → 구현/검증. 자동 배치 run이면 호재가 팀도 추천하고,
-    // 단계별 담당 개발자는 두 모드 모두 계획에서 배정된다.
-    pipeline
-      .plan(id, input.brief, targetDir, reporter, {
-        suggestTeam: autoTeam,
-        builderIds: roster.builderIds,
-      })
-      .catch(onFatal(reporter));
+  switch (runModeOf(roster)) {
+    case "verifyOnly": // 검증자만 — 프로젝트 현재 상태 감사
+      pipeline.verifyOnly(id, input.brief, targetDir, reporter, roster).catch(onFatal(reporter));
+      break;
+    case "planOnly": // 기획만 — 계획서 작성 후 종료
+      pipeline.planOnly(id, input.brief, targetDir, reporter).catch(onFatal(reporter));
+      break;
+    case "direct": // 기획 생략 — 승인 없이 바로 구현 (검증은 선택된 만큼)
+      pipeline.directBuild(id, input.brief, targetDir, reporter).catch(onFatal(reporter));
+      break;
+    case "full": // 기본 — 계획 → 승인 → 구현/검증. 자동 배치 run이면 호재가
+      // 팀도 추천하고, 단계별 담당 개발자는 두 모드 모두 계획에서 배정된다.
+      pipeline
+        .plan(id, input.brief, targetDir, reporter, {
+          suggestTeam: autoTeam,
+          builderIds: roster.builderIds,
+        })
+        .catch(onFatal(reporter));
+      break;
   }
 
   return id;
@@ -251,7 +221,7 @@ export async function retryRun(runId: string): Promise<boolean> {
 
   // 검증 전용 run은 재개할 빌드가 없다 — 감사를 처음부터 다시 실행.
   const roster = rosterOf(st.agents);
-  if (!roster.planner && roster.builderIds.length === 0) {
+  if (runModeOf(roster) === "verifyOnly") {
     await reporter.log("approval", "사용자가 프로젝트 감사를 다시 실행합니다.");
     pipeline.verifyOnly(runId, st.brief, st.targetDir, reporter, roster).catch(onFatal(reporter));
     return true;

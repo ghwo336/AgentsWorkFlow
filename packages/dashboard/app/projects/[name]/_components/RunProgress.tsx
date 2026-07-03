@@ -7,6 +7,7 @@ import {
   PixelAvatar,
   ROLE_COLOR,
   rosterOf,
+  runModeOf,
   type Agent,
 } from "../../../lib/agents";
 import type { RunDetail, Step } from "../../../lib/types";
@@ -139,10 +140,11 @@ function FlowPill({ step }: { step: Step }) {
 }
 
 export function RunProgress({ detail }: { detail: RunDetail }) {
-  // 이 run의 참여 로스터(좌석) — 조합이 표시할 구간(기획/단계/감사)을 결정한다.
+  // 이 run의 참여 로스터(좌석) — 실행 모드가 표시할 구간(기획/단계/감사)을 결정.
   const roster = rosterOf(parseAgents(detail.agents));
+  const mode = runModeOf(roster);
   const hasPlanner = roster.planner;
-  const auditOnly = !hasPlanner && roster.builderIds.length === 0; // 검증 전용
+  const auditOnly = mode === "verifyOnly";
   const firstBuilder = roster.builderIds[0] ? agentById(roster.builderIds[0]) : undefined;
 
   const planStep = detail.steps.find((s) => s.kind === "plan") ?? null;

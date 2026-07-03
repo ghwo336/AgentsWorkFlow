@@ -22,8 +22,20 @@ export function loadHarness(agentId: string): string | undefined {
   }
 }
 
-// Append a harness onto a base system prompt / lens block.
+// 하네스 삽입 헤더는 여기 한 곳에서만 만든다 — 시스템 프롬프트(문자열)와
+// 리뷰어 렌즈(줄 배열) 두 형태 모두 같은 머리말을 쓴다.
+function harnessHeader(name: string): string {
+  return `=== ${name}의 개인 하네스 (전문 분야·작업 규칙 — 반드시 따르세요) ===`;
+}
+
+// Append a harness onto a base system prompt.
 export function withHarness(base: string, harness: string | undefined, name: string): string {
   if (!harness) return base;
-  return `${base}\n\n=== ${name}의 개인 하네스 (전문 분야·작업 규칙 — 반드시 따르세요) ===\n${harness}`;
+  return `${base}\n\n${harnessHeader(name)}\n${harness}`;
+}
+
+// Append a harness onto a reviewer lens (line-array form).
+export function lensWithHarness(lens: string[], harness: string | undefined, name: string): string[] {
+  if (!harness) return lens;
+  return [...lens, "", harnessHeader(name), harness];
 }

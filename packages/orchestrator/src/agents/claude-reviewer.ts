@@ -1,6 +1,7 @@
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import { queryFinalText } from "./claude-query.js";
+import { lensWithHarness } from "./harness.js";
 import { buildReviewPrompt } from "./review-policy.js";
-import type { CodexUsage, Reviewer, VerifyRequest, VerifyResult } from "./types.js";
+import type { Reviewer, VerifyRequest, VerifyResult } from "./types.js";
 
 // A second LLM reviewer with a DIFFERENT lens from codex: instead of repeating
 // the same static strictness, it asks "would this actually work when run?" —
@@ -42,9 +43,7 @@ export class ClaudeReviewer implements Reviewer {
   ) {}
 
   async review(req: VerifyRequest): Promise<VerifyResult> {
-    const lens = this.harness
-      ? [...RUNTIME_LENS, "", "=== 유준의 개인 하네스 (추가 규칙) ===", this.harness]
-      : RUNTIME_LENS;
+    const lens = lensWithHarness(RUNTIME_LENS, this.harness, "유준");
     const prompt = buildReviewPrompt(req.plan, req.diff, {
       attempt: req.attempt,
       previousFailures: req.previousFailures,
@@ -52,35 +51,15 @@ export class ClaudeReviewer implements Reviewer {
       verdictFormat: VERDICT_FORMAT,
     });
 
-    let finalText = "";
-    let usage: CodexUsage | undefined;
     try {
-      const response = query({
-        prompt,
-        options: {
-          model: this.model,
-          cwd: req.cwd,
-          permissionMode: "plan", // read-only grounding in the workspace
-          disallowedTools: ["Write", "Edit", "MultiEdit", "NotebookEdit", "Task", "Bash"],
-        },
+      const { text, usage } = await queryFinalText(prompt, {
+        model: this.model,
+        cwd: req.cwd,
+        permissionMode: "plan", // read-only grounding in the workspace
+        disallowedTools: ["Write", "Edit", "MultiEdit", "NotebookEdit", "Task", "Bash"],
       });
-      for await (const msg of response as AsyncIterable<any>) {
-        if (msg.type === "assistant") {
-          for (const block of msg.message?.content ?? []) {
-            if (block.type === "text" && block.text.trim()) finalText = block.text;
-          }
-        } else if (msg.type === "result") {
-          if (typeof msg.result === "string" && msg.result.trim()) finalText = msg.result;
-          const u = msg?.usage;
-          if (u && typeof u === "object") {
-            usage = {
-              inputTokens: num(u.input_tokens),
-              outputTokens: num(u.output_tokens),
-              cacheRead: num(u.cache_read_input_tokens),
-            };
-          }
-        }
-      }
+      const { passed, reason } = parseVerdict(text);
+      return { passed, reason, raw: text, usage };
     } catch (err: any) {
       return {
         passed: false,
@@ -88,9 +67,6 @@ export class ClaudeReviewer implements Reviewer {
         raw: String(err?.message ?? err),
       };
     }
-
-    const { passed, reason } = parseVerdict(finalText);
-    return { passed, reason, raw: finalText, usage };
   }
 }
 
@@ -109,8 +85,4 @@ function parseVerdict(text: string): { passed: boolean; reason: string } {
     .replace(/^[\s\S]*?VERDICT:\s*(PASS|FAIL)\s*/i, "")
     .trim();
   return { passed: m[1].toUpperCase() === "PASS", reason: reason || "(사유 없음)" };
-}
-
-function num(v: unknown): number {
-  return typeof v === "number" && Number.isFinite(v) ? v : 0;
 }

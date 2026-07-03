@@ -1,6 +1,28 @@
 import { prisma } from "@agent-loop/shared/db";
 import { parseAgents } from "@agent-loop/shared/roster";
 
+// ALL writes to the Run table live in this module — the class methods below and
+// this status update (delegated to by events.setStatus, which owns only the
+// broadcast side). One writer = one place to reason about run-row transitions.
+export function updateRunStatus(
+  runId: string,
+  status: string,
+  extra: Partial<{ plan: string; commit: string; error: string; targetDir: string }> = {}
+): Promise<unknown> {
+  return prisma.run.update({ where: { id: runId }, data: { status, ...extra } });
+}
+
+// Parse a Run.planSteps JSON column into descriptions (shared by resume/stuck).
+function parsePlanSteps(json: string | null): string[] {
+  if (!json) return [];
+  try {
+    const arr = JSON.parse(json);
+    return Array.isArray(arr) ? arr.map((s) => String(s)) : [];
+  } catch {
+    return []; /* malformed — fall back to none */
+  }
+}
+
 export interface CreateRunInput {
   title: string;
   brief: string;
@@ -96,15 +118,7 @@ export class RunStore {
   } | null> {
     const r = await prisma.run.findUnique({ where: { id: runId } });
     if (!r) return null;
-    let steps: string[] = [];
-    if (r.planSteps) {
-      try {
-        const arr = JSON.parse(r.planSteps);
-        if (Array.isArray(arr)) steps = arr.map((s) => String(s));
-      } catch {
-        /* malformed — fall back to none */
-      }
-    }
+    const steps = parsePlanSteps(r.planSteps);
     let stepDevs: (string | null)[] = [];
     if (r.stepDevs) {
       try {
@@ -123,6 +137,37 @@ export class RunStore {
       stepDevs,
       agents: parseAgents(r.agents),
       autoTeam: r.autoTeam,
+    };
+  }
+
+  // What 호재 needs to discuss a STUCK (needs_input) run with the user: the
+  // approved plan, which step is stuck (= number of resolved commit-steps), the
+  // park reason, and the latest rejection reasons. null = run not found.
+  async getStuckContext(runId: string): Promise<{
+    plan: string | null;
+    steps: string[];
+    stuckIdx: number;
+    error: string | null;
+    recentFailures: string[];
+  } | null> {
+    const r = await prisma.run.findUnique({ where: { id: runId } });
+    if (!r) return null;
+    const steps = parsePlanSteps(r.planSteps);
+    const resolved = await prisma.step.count({
+      where: { runId, kind: "commit", status: { in: ["passed", "skipped"] } },
+    });
+    const stuckIdx = Math.min(resolved, Math.max(0, steps.length - 1));
+    const recentFails = await prisma.verdict.findMany({
+      where: { runId, passed: false },
+      orderBy: { ts: "desc" },
+      take: 3,
+    });
+    return {
+      plan: r.plan,
+      steps,
+      stuckIdx,
+      error: r.error,
+      recentFailures: recentFails.map((v) => v.reason),
     };
   }
 

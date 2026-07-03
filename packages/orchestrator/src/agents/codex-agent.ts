@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CodexVerdict } from "@agent-loop/shared/types";
 import { buildReviewPrompt } from "./review-policy.js";
-import type { CodexUsage, Reviewer, VerifyRequest, VerifyResult, Verifier } from "./types.js";
+import type { CodexUsage, Reviewer, VerifyRequest, VerifyResult } from "./types.js";
 
 // Run codex, feeding the PROMPT over STDIN (write + close). Two hard-won rules:
 // - The prompt must NOT be an argv argument: a big diff once blew the OS
@@ -182,12 +182,11 @@ function extractVerdict(raw: string): CodexVerdict {
   throw new Error(`Could not parse codex verdict from: ${trimmed.slice(0, 500)}`);
 }
 
-// codex-backed reviewer. The verdict schema path is injected so this module
-// stays free of orchestrator config wiring (DIP). It satisfies both Verifier
-// (legacy single-verify) and Reviewer (fan-out). One class, many identities:
-// the composition root instantiates it once per LENS (품질 리뷰어 주호, 보안
-// 리뷰어 동환) — same engine, different job description.
-export class CodexVerifier implements Verifier, Reviewer {
+// codex-backed reviewer for the fan-out. The verdict schema path is injected so
+// this module stays free of orchestrator config wiring (DIP). One class, many
+// identities: the composition root instantiates it once per LENS (품질 리뷰어
+// 주호, 보안 리뷰어 동환) — same engine, different job description.
+export class CodexVerifier implements Reviewer {
   readonly kind = "review" as const;
   readonly engine = "codex";
   readonly name: string;
@@ -202,10 +201,7 @@ export class CodexVerifier implements Verifier, Reviewer {
     this.lens = identity.lens;
   }
 
-  verify(req: VerifyRequest): Promise<VerifyResult> {
-    return runCodexVerify(req, this.schemaPath, this.lens);
-  }
   review(req: VerifyRequest): Promise<VerifyResult> {
-    return this.verify(req);
+    return runCodexVerify(req, this.schemaPath, this.lens);
   }
 }
