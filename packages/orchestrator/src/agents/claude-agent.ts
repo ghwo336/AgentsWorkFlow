@@ -178,6 +178,14 @@ ONLY that step — do not start other steps. Make all necessary file edits in th
 working directory. Keep changes focused. Do not commit — a separate verifier
 and the orchestrator handle verification and committing.
 
+Code structure rules (apply to every language/framework):
+  - One file/module has ONE reason to change. If data access, business logic,
+    and presentation end up mixed in one file, split them.
+  - No premature abstraction: do not create interfaces with a single
+    implementation, wrapper layers called from one place, or "might need it
+    later" option parameters. Split when responsibilities mix or real reuse
+    appears — not preemptively.
+
 IMPORTANT: Write all of your prose — progress notes and the final summary — in
 Korean (한국어). Code, identifiers, and commands stay in their original form.
 When done, write a concise Korean summary covering:

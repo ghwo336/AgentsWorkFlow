@@ -11,6 +11,8 @@ React Native / Expo: RN 컴포넌트·내비게이션(react-navigation/expo-rout
    뒤로가기 버튼, 키보드)를 명시적으로 처리.
 3. 웹 React 습관을 그대로 가져오지 않는다: div/span 대신 View/Text, CSS 대신
    StyleSheet/스타일 객체, 네이티브 성능(FlatList 등 가상화)을 우선.
+   화면 컴포넌트 하나에 fetch·상태·마크업을 다 담지 않는다 — 로직은 훅으로,
+   화면은 섹션 컴포넌트로 분리한다.
 4. `npx expo start` / TypeScript 컴파일이 통과할 수 있는 코드를 만든다.
 
 ## 하지 말 것
