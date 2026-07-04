@@ -15,14 +15,79 @@ function takeOf(raw: string | undefined): number | undefined {
   return Math.min(n, 500);
 }
 
+type DetailQuery = {
+  eventsTake?: string;
+  chatTake?: string;
+  verdicts?: string;
+  stepSummaryMax?: string;
+};
+
+// One run's detail payload (bounded or full — see the /data/runs/:id route
+// comment). Shared by /data/runs/:id and /data/runs/latest. null = no such run.
+async function runDetail(id: string, q: DetailQuery) {
+  const eventsTake = takeOf(q.eventsTake);
+  const chatTake = takeOf(q.chatTake);
+  const run = await prisma.run.findUnique({
+    where: { id },
+    include: {
+      events: eventsTake
+        ? { orderBy: [{ ts: "desc" as const }, { id: "desc" as const }], take: eventsTake }
+        : { orderBy: { ts: "asc" as const } },
+      ...(q.verdicts === "0" ? {} : { verdicts: { orderBy: { ts: "asc" as const } } }),
+      steps: { orderBy: [{ orderIdx: "asc" as const }, { startedAt: "asc" as const }] },
+      chatMsgs: chatTake
+        ? { orderBy: [{ ts: "desc" as const }, { id: "desc" as const }], take: chatTake }
+        : { orderBy: { ts: "asc" as const } },
+    },
+  });
+  if (!run) return null;
+  if (eventsTake) run.events.reverse();
+  if (chatTake) run.chatMsgs.reverse();
+  // Step summaries are the heaviest part of a long run (each a full report).
+  // ?stepSummaryMax=N ships only a preview + the real length (summaryLen); the
+  // client fetches /data/steps/:id when the user actually expands one.
+  const summaryMax = takeOf(q.stepSummaryMax);
+  const steps = summaryMax
+    ? run.steps.map((s) => ({
+        ...s,
+        summary: s.summary && s.summary.length > summaryMax ? s.summary.slice(0, summaryMax) : s.summary,
+        summaryLen: s.summary?.length ?? 0,
+      }))
+    : run.steps;
+  const [eventsTotal, chatTotal] = await Promise.all([
+    eventsTake ? prisma.event.count({ where: { runId: id } }) : run.events.length,
+    chatTake ? prisma.chatMsg.count({ where: { runId: id } }) : run.chatMsgs.length,
+  ]);
+  return {
+    ...run,
+    steps,
+    verdicts: (run as { verdicts?: unknown[] }).verdicts ?? [],
+    eventsTotal,
+    chatTotal,
+  };
+}
+
 export function registerDataRoutes(app: FastifyInstance): void {
-  // Runs list (newest first), optionally scoped to a project.
+  // Runs list (newest first), optionally scoped to a project. LIGHT columns
+  // only — the sidebar shows title/status, but brief/plan/planSteps are whole
+  // documents and this list is refetched on every SSE event.
   app.get("/data/runs", async (req) => {
     const project = (req.query as { project?: string })?.project;
     return prisma.run.findMany({
       where: project ? { project } : undefined,
       orderBy: { createdAt: "desc" },
       take: 100,
+      select: {
+        id: true,
+        project: true,
+        title: true,
+        status: true,
+        agents: true,
+        commit: true,
+        error: true,
+        targetDir: true,
+        createdAt: true,
+      },
     });
   });
 
@@ -37,30 +102,30 @@ export function registerDataRoutes(app: FastifyInstance): void {
   // page, legacy callers).
   app.get("/data/runs/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
-    const q = req.query as { eventsTake?: string; chatTake?: string; verdicts?: string };
-    const eventsTake = takeOf(q.eventsTake);
-    const chatTake = takeOf(q.chatTake);
-    const run = await prisma.run.findUnique({
-      where: { id },
-      include: {
-        events: eventsTake
-          ? { orderBy: [{ ts: "desc" as const }, { id: "desc" as const }], take: eventsTake }
-          : { orderBy: { ts: "asc" as const } },
-        ...(q.verdicts === "0" ? {} : { verdicts: { orderBy: { ts: "asc" as const } } }),
-        steps: { orderBy: [{ orderIdx: "asc" }, { startedAt: "asc" }] },
-        chatMsgs: chatTake
-          ? { orderBy: [{ ts: "desc" as const }, { id: "desc" as const }], take: chatTake }
-          : { orderBy: { ts: "asc" as const } },
-      },
+    const detail = await runDetail(id, req.query as DetailQuery);
+    if (!detail) return reply.code(404).send({ error: "not found" });
+    return detail;
+  });
+
+  // Newest run's detail for a project, in ONE round trip — the workspace's
+  // first paint used to waterfall 목록 → 선택 → 상세; this collapses it.
+  app.get("/data/runs/latest", async (req, reply) => {
+    const q = req.query as DetailQuery & { project?: string };
+    const latest = await prisma.run.findFirst({
+      where: q.project ? { project: q.project } : undefined,
+      orderBy: { createdAt: "desc" },
+      select: { id: true },
     });
-    if (!run) return reply.code(404).send({ error: "not found" });
-    if (eventsTake) run.events.reverse();
-    if (chatTake) run.chatMsgs.reverse();
-    const [eventsTotal, chatTotal] = await Promise.all([
-      eventsTake ? prisma.event.count({ where: { runId: id } }) : run.events.length,
-      chatTake ? prisma.chatMsg.count({ where: { runId: id } }) : run.chatMsgs.length,
-    ]);
-    return { ...run, verdicts: (run as { verdicts?: unknown[] }).verdicts ?? [], eventsTotal, chatTotal };
+    if (!latest) return reply.code(404).send({ error: "no runs" });
+    return runDetail(latest.id, q);
+  });
+
+  // One step's full row — for lazily expanding a truncated summary.
+  app.get("/data/steps/:id", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const step = await prisma.step.findUnique({ where: { id } });
+    if (!step) return reply.code(404).send({ error: "not found" });
+    return step;
   });
 
   // Older timeline events, newest-first cursor paging: rows strictly BEFORE the

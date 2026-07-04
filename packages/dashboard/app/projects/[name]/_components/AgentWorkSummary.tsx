@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { agentForStep, PixelAvatar, ROLE_COLOR } from "../../../lib/agents";
+import { api } from "../../../lib/api";
 import { Markdown } from "../../../lib/Markdown";
 import type { Step } from "../../../lib/types";
 import { fmtClock, fmtDur, stepOutcome } from "../_plan-steps";
@@ -113,13 +114,25 @@ function SummaryItem({
   const agent = agentForStep(step);
   const outcome = stepOutcome(step, awaitingApproval);
   const [expanded, setExpanded] = useState(false);
+  // 라이브 뷰의 summary는 미리보기 길이로 잘려 온다(summaryLen = 원문 길이).
+  // 더보기를 눌렀을 때만 그 step의 전문을 가져와 채운다.
+  const [fetched, setFetched] = useState<string | null>(null);
+  const truncated = (step.summaryLen ?? 0) > (step.summary?.length ?? 0);
+  const expand = () => {
+    setExpanded((v) => !v);
+    if (!expanded && truncated && !fullText && fetched === null) {
+      api.getStep(step.id).then((full) => setFetched(full.summary ?? "")).catch(() => {});
+    }
+  };
   // Prefer the full text (e.g. the whole plan) over the compacted summary, so
   // expanding really shows everything.
   const body =
     fullText?.trim() ||
+    fetched?.trim() ||
     step.summary?.trim() ||
     (step.status === "running" ? "진행 중입니다." : "요약이 없습니다.");
-  const long = body.length > 180;
+  const long = body.length > 180 || truncated;
+  const loadingFull = expanded && truncated && !fullText && fetched === null;
   const collapsed = long && !expanded ? `${body.slice(0, 180).trimEnd()}…` : body;
   const bodyLabel =
     step.kind === "build" ? "구현 내용" : step.kind === "plan" ? "계획 요약" : "리뷰 결과";
@@ -156,13 +169,17 @@ function SummaryItem({
         <span className="muted small">{bodyLabel} · </span>
         {/* Collapsed → plain truncated text (never cut markdown mid-syntax);
             expanded → full text rendered as markdown. */}
-        {expanded ? <Markdown>{body}</Markdown> : collapsed}
+        {expanded ? (
+          loadingFull ? <span className="muted small">전문 불러오는 중…</span> : <Markdown>{body}</Markdown>
+        ) : (
+          collapsed
+        )}
       </div>
       {long && (
         <button
           className="ghost small"
           style={{ marginTop: 6, boxShadow: "none", padding: "2px 8px" }}
-          onClick={() => setExpanded((v) => !v)}
+          onClick={expand}
         >
           {expanded ? "접기 ▾" : "더보기 ▸"}
         </button>

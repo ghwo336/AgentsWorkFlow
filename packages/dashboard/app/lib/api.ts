@@ -8,12 +8,16 @@ import type {
   RunDetail,
   RunEvent,
   StartRunInput,
+  Step,
 } from "./types";
 
 // 라이브 뷰의 페이지 크기. 로그는 한 줄짜리라 넉넉히(30), 대화는 보고서
 // 전문이 실려 무거우니 10 — "더보기"도 같은 단위로 가져온다.
 export const LOG_PAGE = 30;
 export const CHAT_PAGE = 10;
+// step summary 미리보기 길이 — 카드 접힌 상태(180자)를 그리기에 충분하고,
+// 전문은 더보기 시 getStep으로 가져온다.
+export const STEP_PREVIEW = 300;
 
 // Single place that talks to the backend HTTP API. Centralizes URL building,
 // the no-store cache policy, and consistent (Korean) error messages so pages
@@ -74,9 +78,24 @@ export const api = {
   // olderRunEvents/olderRunChat으로 "더보기" 페이징.
   getRun: (id: string) =>
     getJson<RunDetail>(
-      `/api/runs/${id}?eventsTake=${LOG_PAGE}&chatTake=${CHAT_PAGE}&verdicts=0`,
+      `/api/runs/${id}?eventsTake=${LOG_PAGE}&chatTake=${CHAT_PAGE}&verdicts=0&stepSummaryMax=${STEP_PREVIEW}`,
       "작업 상세 로드 실패"
     ),
+
+  // 잘려 온 step summary의 전문 — 작업 요약에서 더보기를 눌렀을 때만.
+  getStep: (id: string) => getJson<Step>(`/api/steps/${id}`, "작업 내용 로드 실패"),
+
+  // 프로젝트의 최신 run 상세를 한 왕복에 — 첫 진입의 목록→선택→상세 폭포 제거.
+  // null = 아직 run이 없는 프로젝트 (에러 아님).
+  getLatestRun: async (project: string): Promise<RunDetail | null> => {
+    const r = await fetch(
+      `/api/runs/latest?project=${encodeURIComponent(project)}&eventsTake=${LOG_PAGE}&chatTake=${CHAT_PAGE}&verdicts=0&stepSummaryMax=${STEP_PREVIEW}`,
+      { cache: "no-store" }
+    );
+    if (r.status === 404) return null;
+    if (!r.ok) throw new Error(`최근 작업 로드 실패 (${r.status})`);
+    return r.json() as Promise<RunDetail>;
+  },
 
   olderRunEvents: (id: string, before: string) =>
     getJson<RunEvent[]>(

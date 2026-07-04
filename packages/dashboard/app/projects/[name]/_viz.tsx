@@ -77,11 +77,18 @@ export function RunViz({ steps, status }: { steps: Step[]; status?: string }) {
 }
 
 // ── 1) List (improved): progress bar + step rows ────────────────────────────
+// 긴 run은 스텝이 수십 개라 최근 것부터 LIST_PAGE개만 그리고, 위의 더보기로
+// 과거분을 드러낸다 (스텝 데이터는 이미 다 있으니 렌더링만 페이징).
+const LIST_PAGE = 20;
+
 function StepListView({ steps, status }: { steps: Step[]; status?: string }) {
   const now = Date.now();
+  const [limit, setLimit] = useState(LIST_PAGE);
   const done = steps.filter((s) => s.status === "passed").length;
   const failed = steps.filter((s) => s.status === "failed").length;
   const pct = Math.round((done / steps.length) * 100);
+  const shown = steps.slice(Math.max(0, steps.length - limit));
+  const hidden = steps.length - shown.length;
 
   // Before approval the plan is the only step, so a step-based bar reads 100% —
   // which looks like the whole task is done/approved. It isn't: the user still
@@ -108,7 +115,16 @@ function StepListView({ steps, status }: { steps: Step[]; status?: string }) {
         </>
       )}
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {steps.map((s) => (
+        {hidden > 0 && (
+          <button
+            className="ghost small"
+            style={{ boxShadow: "none", padding: "2px 8px", alignSelf: "center" }}
+            onClick={() => setLimit((n) => n + LIST_PAGE)}
+          >
+            ▴ 이전 단계 {Math.min(LIST_PAGE, hidden)}개 더보기 ({hidden}개 남음)
+          </button>
+        )}
+        {shown.map((s) => (
           <div key={s.id} className="step-row">
             <span className="step-dot" style={{ background: statusColor(s.status) }} />
             <span style={{ minWidth: 20 }}>{kindIcon(s.kind)}</span>

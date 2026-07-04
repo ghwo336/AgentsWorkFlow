@@ -24,7 +24,8 @@ export type Run = {
   id: string;
   project: string;
   title: string;
-  brief: string;
+  // 목록 응답에는 실리지 않는다 (계획서급 텍스트 — 상세에만).
+  brief?: string;
   status: string;
   // JSON-encoded string[] of participating roster agent ids; null = 전원.
   agents?: string | null;
@@ -65,6 +66,9 @@ export type Step = {
   attempt: number;
   status: string; // pending | running | passed | failed | skipped
   summary: string | null;
+  // summary 원문 길이 — 라이브 뷰에선 summary가 미리보기 길이로 잘려 오므로,
+  // 이 값이 summary.length보다 크면 전문은 getStep으로 따로 가져와야 한다.
+  summaryLen?: number;
   startedAt: string;
   endedAt: string | null;
   orderIdx: number;
