@@ -78,6 +78,8 @@ a:hover { text-decoration: underline; }
   display: inline-block; padding: 2px 8px; border-radius: 4px;
   font-size: 11px; border: 2px solid var(--border);
   background: var(--panel-2);
+  /* flex 안에서 좁아져도 라벨이 세로로 꺾이지 않게 (완료 → 완/료) */
+  white-space: nowrap; flex-shrink: 0;
 }
 .b-committed, .b-reported { color: var(--green); border-color: var(--green); }
 .b-rejected, .b-failed { color: var(--red); border-color: var(--red); }
@@ -203,9 +205,12 @@ textarea:focus, input:focus, select:focus { outline: none; border-color: var(--a
   display: flex; flex-direction: column; gap: 4px;
 }
 .log .line { display: flex; gap: 8px; align-items: center; }
-/* 메시지(마지막 칸)는 줄어들 수 있어야(min-width:0) 긴 경로/URL이 로그 패널을
-   옆으로 밀지 않고 안에서 꺾인다. */
-.log .line > :last-child { min-width: 0; overflow-wrap: anywhere; }
+/* 메시지 칸(.msg)만 줄어들 수 있어야(min-width:0) 긴 경로/URL이 로그 패널을
+   옆으로 밀지 않고 안에서 꺾인다. (:last-child 의존 금지 — 시각 칸이 마지막인
+   레이아웃에서 타임스탬프가 글자 단위로 꺾이는 사고가 났었다.) */
+.log .line .msg { min-width: 0; overflow-wrap: anywhere; }
+/* 시각 칸 — 아무리 좁아져도 한 줄 유지. */
+.log .line .ts { margin-left: auto; white-space: nowrap; flex-shrink: 0; }
 .log .ph { color: var(--muted); min-width: 64px; }
 .log .err { color: var(--red); }
 .log .warn { color: var(--yellow); }

@@ -110,12 +110,10 @@ export default async function RunDetail({
                     {agent.name}
                   </span>
                 </span>
-                <span className={ev.level === "error" ? "err" : ev.level === "warn" ? "warn" : ""}>
+                <span className={`msg${ev.level === "error" ? " err" : ev.level === "warn" ? " warn" : ""}`}>
                   {ev.message}
                 </span>
-                <span className="muted small" style={{ marginLeft: "auto" }}>
-                  {new Date(ev.ts).toLocaleTimeString()}
-                </span>
+                <span className="muted small ts">{new Date(ev.ts).toLocaleTimeString()}</span>
               </div>
             );
           })}

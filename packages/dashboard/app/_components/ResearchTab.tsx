@@ -460,7 +460,7 @@ function ResearchThread({
               <div className="log" style={{ marginTop: 8 }}>
                 {lastEvents.map((ev) => (
                   <div key={ev.id} className="line">
-                    <span className={ev.level === "error" ? "err" : ev.level === "warn" ? "warn" : ""}>
+                    <span className={`msg${ev.level === "error" ? " err" : ev.level === "warn" ? " warn" : ""}`}>
                       {ev.message}
                     </span>
                   </div>

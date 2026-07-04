@@ -78,7 +78,7 @@ export function LiveLog({
                   {agent.name}
                 </span>
               </span>
-              <span className={ev.level === "error" ? "err" : ev.level === "warn" ? "warn" : ""}>
+              <span className={`msg${ev.level === "error" ? " err" : ev.level === "warn" ? " warn" : ""}`}>
                 {ev.message}
               </span>
             </div>
