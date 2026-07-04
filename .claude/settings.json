@@ -4,7 +4,17 @@
       "Skill(update-config)",
       "Skill(update-config:*)",
       "Bash(sqlite3 /Users/Shared/srv/agent-loop/prisma/prisma/dev.db 'SELECT r.title, r.status FROM Run r ORDER BY r.createdAt DESC LIMIT 2;')",
-      "Bash(sqlite3 /Users/Shared/srv/agent-loop/prisma/prisma/dev.db 'SELECT s.label, s.status, s.attempt, datetime\\(s.startedAt/1000,'\\\\''unixepoch'\\\\'','\\\\''localtime'\\\\''\\), COALESCE\\(datetime\\(s.endedAt/1000,'\\\\''unixepoch'\\\\'','\\\\''localtime'\\\\''\\),'\\\\''진행중'\\\\''\\), substr\\(COALESCE\\(s.summary,'\\\\'''\\\\''\\),1,60\\) FROM Step s JOIN Run r ON r.id=s.runId WHERE s.kind IN \\('\\\\''review'\\\\'','\\\\''test'\\\\''\\) AND r.createdAt = \\(SELECT MAX\\(createdAt\\) FROM Run\\) ORDER BY s.startedAt DESC LIMIT 8;')"
+      "Bash(sqlite3 /Users/Shared/srv/agent-loop/prisma/prisma/dev.db 'SELECT s.label, s.status, s.attempt, datetime\\(s.startedAt/1000,'\\\\''unixepoch'\\\\'','\\\\''localtime'\\\\''\\), COALESCE\\(datetime\\(s.endedAt/1000,'\\\\''unixepoch'\\\\'','\\\\''localtime'\\\\''\\),'\\\\''진행중'\\\\''\\), substr\\(COALESCE\\(s.summary,'\\\\'''\\\\''\\),1,60\\) FROM Step s JOIN Run r ON r.id=s.runId WHERE s.kind IN \\('\\\\''review'\\\\'','\\\\''test'\\\\''\\) AND r.createdAt = \\(SELECT MAX\\(createdAt\\) FROM Run\\) ORDER BY s.startedAt DESC LIMIT 8;')",
+      "Bash(open -a Docker)",
+      "Bash(curl -s -o /dev/null -w '%{http_code}\\\\n' http://127.0.0.1:3737)",
+      "Bash(curl -s -o /dev/null -w '%{http_code}\\\\n' https://agent.pelicanlab.dev)",
+      "Bash(vm_stat)",
+      "Bash(awk '/Pages free|Pages active|Pages wired|Pages occupied|Pageins|Pageouts|swapouts/{print}')",
+      "Bash(sysctl vm.swapusage)",
+      "Bash(ps -Ao rss,comm -r)",
+      "Bash(awk 'NR==1{print \" RSS\\(MB\\) COMMAND\"} NR>1{printf \"%8.0f %s\\\\n\",$1/1024,$2}')",
+      "Bash(docker system *)",
+      "Bash(docker stop *)"
     ]
   }
 }
