@@ -7,22 +7,19 @@ import { errMsg } from "../lib/err";
 import { useLoad } from "../lib/hooks/useLoad";
 import { useOrchestratorEvents } from "../lib/hooks/useOrchestratorEvents";
 import type { ProjectSummary } from "../lib/types";
-import { ResearchTab } from "./ResearchTab";
-import { TeamIntro } from "./TeamIntro";
 
-type HomeTab = "projects" | "research" | "team";
-
-// 리서치 run들이 담기는 예약 프로젝트는 프로젝트 탭이 아니라 리서치 탭의
-// 것이다 — 목록에서 숨긴다.
+// 리서치 run들이 담기는 예약 프로젝트는 프로젝트 목록이 아니라 /research
+// 섹션의 것이다 — 목록에서 숨긴다.
 const visibleProjects = (rows: ProjectSummary[]) => rows.filter((p) => p.name !== RESEARCH_PROJECT);
 
-// Home UI. The initial project list arrives from the server component
-// (page.tsx) inside the HTML; SSE events refresh it live afterward.
+// Home UI — 프로젝트 목록/생성 전용. 리서치·팀은 이제 각자 라우트(/research,
+// /team)라 여기서 탭으로 다루지 않는다.
+// The initial project list arrives from the server component (page.tsx) inside
+// the HTML; SSE events refresh it live afterward.
 export function HomeClient({ initialProjects }: { initialProjects: ProjectSummary[] }) {
-  const [tab, setTab] = useState<HomeTab>("projects");
   const [newName, setNewName] = useState("");
   const [createError, setCreateError] = useState<string | null>(null);
-  // SSE 이벤트 카운터 — 프로젝트 목록과 리서치 탭이 다시 읽는 신호로 쓴다.
+  // SSE 이벤트 카운터 — 프로젝트 목록을 다시 읽는 신호로 쓴다.
   const [refreshKey, setRefreshKey] = useState(0);
 
   const { data, error } = useLoad(() => api.listProjects().then(visibleProjects), [refreshKey], {
@@ -52,35 +49,6 @@ export function HomeClient({ initialProjects }: { initialProjects: ProjectSummar
 
   return (
     <div className="wrap">
-      <div className="viz-tabs home-tabs" style={{ marginBottom: 14 }}>
-        <button
-          type="button"
-          className={`viz-tab${tab === "projects" ? " active" : ""}`}
-          onClick={() => setTab("projects")}
-        >
-          📁 프로젝트
-        </button>
-        <button
-          type="button"
-          className={`viz-tab${tab === "research" ? " active" : ""}`}
-          onClick={() => setTab("research")}
-        >
-          🔍 리서치
-        </button>
-        <button
-          type="button"
-          className={`viz-tab${tab === "team" ? " active" : ""}`}
-          onClick={() => setTab("team")}
-        >
-          👋 팀 소개
-        </button>
-      </div>
-
-      {tab === "research" && <ResearchTab refreshKey={refreshKey} />}
-      {tab === "team" && <TeamIntro />}
-
-      {tab === "projects" && (
-        <>
       <form className="panel" onSubmit={create}>
         <b>＋ 새 프로젝트</b>
         <div style={{ height: 8 }} />
@@ -118,8 +86,6 @@ export function HomeClient({ initialProjects }: { initialProjects: ProjectSummar
           )}
         </div>
       </div>
-        </>
-      )}
     </div>
   );
 }

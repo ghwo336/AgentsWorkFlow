@@ -1,5 +1,6 @@
 import "./globals.css";
 import type { ReactNode } from "react";
+import { NavLinks } from "./_components/NavLinks";
 import { LogoMark } from "./lib/agents";
 
 export const metadata = {
@@ -21,12 +22,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             <LogoMark size={26} />
             <b>Agent Loop</b>
           </a>
-          <a href="/">Projects</a>
-          <a href="/history">History</a>
-          <a href="/usage">Usage</a>
-          <span className="muted small pixel" style={{ marginLeft: "auto" }}>
-            기획 1 · 개발 5 · 검증 4
-          </span>
+          <NavLinks />
         </nav>
         {children}
       </body>

@@ -55,7 +55,22 @@ a:hover { text-decoration: underline; }
   background: linear-gradient(var(--panel), var(--panel-2));
 }
 .nav b { font-size: 15px; }
-.nav .logo { display: inline-flex; align-items: center; gap: 8px; }
+.nav .logo { display: inline-flex; align-items: center; gap: 8px; margin-right: 8px; }
+
+/* 전역 섹션 네비 — 예전 상단 링크 + 홈 탭을 하나로 합친 알약 바. */
+.nav-links { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.nav-link {
+  font-family: var(--pixel); letter-spacing: 0.2px; font-size: 13px;
+  color: var(--muted);
+  padding: 6px 14px; border-radius: 8px;
+  border: 2px solid transparent;
+  background: transparent;
+}
+.nav-link:hover { color: var(--text); background: var(--panel-2); text-decoration: none; }
+.nav-link.active {
+  color: var(--text); border-color: var(--accent);
+  background: rgba(91, 129, 247, .14);
+}
 
 .wrap { max-width: 1100px; margin: 0 auto; padding: 20px; }
 
@@ -540,8 +555,7 @@ td, th { text-align: left; padding: 8px; border-bottom: 1px solid var(--border);
 .plan-trow.plan-failed { background: rgba(255, 107, 125, .08); }
 .plan-trow.plan-pending { opacity: .72; }
 
-/* ── 팀 소개 (home tab + agent detail modal) ─────────────────────── */
-.home-tabs .viz-tab { font-size: 13px; padding: 6px 14px; }
+/* ── 팀 소개 (agent detail modal) ────────────────────────────────── */
 
 .intro-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
@@ -613,9 +627,8 @@ td, th { text-align: left; padding: 8px; border-bottom: 1px solid var(--border);
 
   .wrap { padding: 14px; }
 
-  /* Nav wraps; drop the decorative pipeline subtitle to save width. */
+  /* Nav wraps to save width on narrow screens. */
   .nav { flex-wrap: wrap; gap: 8px 14px; padding: 10px 14px; }
-  .nav > .small { display: none; }
 
   .panel { padding: 14px; border-radius: 6px; }
 
