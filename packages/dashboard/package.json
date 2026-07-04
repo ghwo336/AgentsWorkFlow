@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start -p 3737 -H 127.0.0.1",
     "start:docker": "next start -p 3737 -H 0.0.0.0",
+    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "test": "tsx --test \"app/**/*.test.ts\""
   },
   "dependencies": {

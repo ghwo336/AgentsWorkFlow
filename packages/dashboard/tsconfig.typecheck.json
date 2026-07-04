@@ -1,0 +1,6 @@
+{
+  "//": "Standalone typecheck (npm run typecheck). Extends the Next-managed tsconfig but drops the generated .next/**/types globs — those only resolve inside `next build`, and their stale validator.ts files break a plain `tsc --noEmit`. next build still uses tsconfig.json.",
+  "extends": "./tsconfig.json",
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx"],
+  "exclude": ["node_modules", ".next"]
+}
