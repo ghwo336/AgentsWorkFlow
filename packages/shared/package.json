@@ -8,7 +8,6 @@
   },
   "exports": {
     ".": "./src/index.ts",
-    "./db": "./src/db.ts",
     "./types": "./src/types.ts",
     "./pricing": "./src/pricing.ts",
     "./roster": "./src/roster.ts"

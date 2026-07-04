@@ -1,4 +1,4 @@
-import { prisma } from "@agent-loop/shared/db";
+import { prisma } from "./db.js";
 import { parseAgents } from "@agent-loop/shared/roster";
 
 // ALL writes to the Run table live in this module — the class methods below and

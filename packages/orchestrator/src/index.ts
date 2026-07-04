@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import Fastify from "fastify";
 import { z } from "zod";
-import { prisma } from "@agent-loop/shared/db";
+import { prisma } from "./db.js";
 import { validateAgents } from "@agent-loop/shared/roster";
 import { bus } from "./bus.js";
 import { clarify, interveneChatForRun } from "./chat.js";

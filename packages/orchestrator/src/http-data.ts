@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { prisma } from "@agent-loop/shared/db";
+import { prisma } from "./db.js";
 
 // Data API served by the orchestrator (a host process that OWNS the SQLite DB).
 // The dashboard runs in Docker and previously read this same file over a macOS

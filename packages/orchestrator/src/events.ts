@@ -1,4 +1,4 @@
-import { prisma } from "@agent-loop/shared/db";
+import { prisma } from "./db.js";
 import { costUsd } from "@agent-loop/shared/pricing";
 import type {
   ChatTurn,

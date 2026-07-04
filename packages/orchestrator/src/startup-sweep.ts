@@ -1,4 +1,4 @@
-import { prisma } from "@agent-loop/shared/db";
+import { prisma } from "./db.js";
 
 // Nothing in-flight survives a restart: builds/reviews live inside this process,
 // so any Step still 'running' (or run still planning/building/verifying) at BOOT
