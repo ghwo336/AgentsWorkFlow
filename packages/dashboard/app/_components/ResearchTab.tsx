@@ -45,6 +45,8 @@ export function ResearchTab({ refreshKey }: { refreshKey: number }) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [newFolderOpen, setNewFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
+  // 드래그 중인 리서치가 올라와 있는 폴더 칩 ("all" = 📂 전체 = 미분류로).
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -71,7 +73,39 @@ export function ResearchTab({ refreshKey }: { refreshKey: number }) {
 
   function openFolder(folderId: string | null) {
     setActiveFolderId(folderId);
-    setActiveId(null); // 폴더를 옮기면 그 폴더의 "＋ 새 리서치"부터
+    // 폴더에 들어가면 그 폴더의 첫 리서치 스레드부터 보여준다 — 비어 있을
+    // 때만 "＋ 새 리서치". 전체는 새 질문 화면이 시작점.
+    const first = folderId ? runs.find((r) => r.folderId === folderId) : null;
+    setActiveId(first?.id ?? null);
+  }
+
+  // 리서치 탭을 폴더 칩에 끌어다 놓기 — "all" 칩이면 미분류로 꺼낸다.
+  async function dropRun(e: React.DragEvent, folderId: string | null) {
+    e.preventDefault();
+    setDropTarget(null);
+    const runId = e.dataTransfer.getData("text/run-id");
+    if (!runId) return;
+    try {
+      await api.setRunFolder(runId, folderId);
+      setError(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "폴더 이동 실패");
+    }
+  }
+
+  // 폴더 칩을 드롭 대상으로 만드는 공통 핸들러 (key: "all" 또는 폴더 id).
+  function dropProps(key: string, folderId: string | null) {
+    return {
+      onDragOver: (e: React.DragEvent) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        setDropTarget(key);
+      },
+      onDragLeave: () => setDropTarget((cur) => (cur === key ? null : cur)),
+      onDrop: (e: React.DragEvent) => dropRun(e, folderId),
+      style: dropTarget === key ? { outline: "2px dashed var(--accent)" } : undefined,
+    };
   }
 
   async function createFolder(e: React.FormEvent) {
@@ -114,6 +148,7 @@ export function ResearchTab({ refreshKey }: { refreshKey: number }) {
           type="button"
           className={`viz-tab${activeFolderId === null ? " active" : ""}`}
           onClick={() => openFolder(null)}
+          {...dropProps("all", null)}
         >
           📂 전체 ({runs.length})
         </button>
@@ -123,7 +158,8 @@ export function ResearchTab({ refreshKey }: { refreshKey: number }) {
             type="button"
             className={`viz-tab${activeFolderId === f.id ? " active" : ""}`}
             onClick={() => openFolder(f.id)}
-            title={f.name}
+            title={`${f.name} — 리서치 탭을 끌어다 놓으면 이 폴더로 들어가요`}
+            {...dropProps(f.id, f.id)}
           >
             📁 {f.name} ({f.runCount})
           </button>
@@ -183,7 +219,12 @@ export function ResearchTab({ refreshKey }: { refreshKey: number }) {
             type="button"
             className={`viz-tab${activeId === r.id ? " active" : ""}`}
             onClick={() => setActiveId(r.id)}
-            title={r.title}
+            title={`${r.title} — 위 폴더로 끌어다 놓을 수 있어요`}
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.setData("text/run-id", r.id);
+              e.dataTransfer.effectAllowed = "move";
+            }}
           >
             {isRunning(r.status) ? "🔎 " : ""}
             {r.title.length > 18 ? `${r.title.slice(0, 18)}…` : r.title}
@@ -191,7 +232,8 @@ export function ResearchTab({ refreshKey }: { refreshKey: number }) {
         ))}
         {activeFolderId && visibleRuns.length === 0 && (
           <span className="muted small" style={{ alignSelf: "center" }}>
-            이 폴더는 아직 비어 있어요 — 새 리서치를 시작하거나 스레드에서 옮겨 담아 보세요.
+            이 폴더는 아직 비어 있어요 — 새 리서치를 시작하거나, 📂 전체에서 리서치 탭을 위
+            폴더 칩으로 끌어다 놓아 보세요.
           </span>
         )}
       </div>
