@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { agentEnv } from "./gate-env.js";
 import { learnedBlock, researchHistoryBlock, splitResearchLessons } from "./research-shared.js";
@@ -93,16 +93,58 @@ function runGrok(
   });
 }
 
-// stdout의 {"text": ...} JSON에서 최종 답을 꺼낸다. CLI가 계약을 어기면(비-JSON
-// 출력) 원문을 그대로 쓴다 — 보고서를 잃는 것보다 낫다.
-export function parseGrokJson(stdout: string): string {
+// stdout의 {"text": ..., "sessionId": ...} JSON에서 최종 답과 세션 id를 꺼낸다.
+// CLI가 계약을 어기면(비-JSON 출력) 원문을 답으로 쓴다 — 보고서를 잃는 것보다
+// 낫다. sessionId는 토큰 사용량 추정(세션 파일)에만 쓰이므로 없어도 동작한다.
+export function parseGrokJson(stdout: string): { text: string; sessionId: string | null } {
   try {
     const parsed = JSON.parse(stdout);
-    if (typeof parsed?.text === "string" && parsed.text.trim()) return parsed.text.trim();
+    if (typeof parsed?.text === "string" && parsed.text.trim()) {
+      return {
+        text: parsed.text.trim(),
+        sessionId: typeof parsed?.sessionId === "string" ? parsed.sessionId : null,
+      };
+    }
   } catch {
     /* not json — fall through */
   }
-  return stdout.trim();
+  return { text: stdout.trim(), sessionId: null };
+}
+
+// Grok CLI는 토큰 사용량을 출력하지 않는다 — 대신 세션 파일
+// (~/.grok/sessions/<encodeURIComponent(cwd)>/<sessionId>/signals.json)의
+// contextTokensUsed(대화 종료 시점의 컨텍스트 토큰 총량, X 검색 결과 포함)를
+// 읽어 총량으로 삼고, 출력분은 보고서 문자수로 추정해 입력/출력을 가른다.
+// 세션 파일이 없거나 포맷이 바뀌면 문자수 추정으로 폴백 — usage가 아예
+// 비는 것보다 근사치가 낫다 (기록 시 추정치임을 모델명 주석으로 문서화).
+export async function estimateGrokUsage(args: {
+  cwd: string;
+  sessionId: string | null;
+  promptChars: number; // rules + prompt (영문 위주 → ~4자/토큰)
+  outputChars: number; // 보고서 (한국어 위주 → ~3자/토큰)
+}): Promise<{ inputTokens: number; outputTokens: number }> {
+  const outputTokens = Math.ceil(args.outputChars / 3);
+  const promptTokens = Math.ceil(args.promptChars / 4);
+  if (args.sessionId) {
+    try {
+      const signalsPath = join(
+        homedir(),
+        ".grok",
+        "sessions",
+        encodeURIComponent(args.cwd),
+        args.sessionId,
+        "signals.json"
+      );
+      const signals = JSON.parse(await readFile(signalsPath, "utf8"));
+      const total = Number(signals?.contextTokensUsed);
+      if (Number.isFinite(total) && total > 0) {
+        return { inputTokens: Math.max(total - outputTokens, promptTokens), outputTokens };
+      }
+    } catch {
+      /* 세션 파일 없음/포맷 변경 — 문자수 폴백 */
+    }
+  }
+  return { inputTokens: promptTokens, outputTokens };
 }
 
 export class GrokResearcher implements Researcher {
@@ -142,8 +184,25 @@ export class GrokResearcher implements Researcher {
         ],
         { cwd: req.cwd, timeoutMs: 15 * 60_000, maxBuffer: 10 * 1024 * 1024 }
       );
-      const text = parseGrokJson(stdout);
+      const { text, sessionId } = parseGrokJson(stdout);
       if (!text) return { text: "", isError: true, lessons: [] };
+      // 사용량 기록 — 추정치라도 남긴다 (안 남기면 usage 뷰에서 grok이 투명인간).
+      // step 핸들 아래에서 호출되므로 agent(상현) 귀속은 reporter가 스탬프한다.
+      const usage = await estimateGrokUsage({
+        cwd: req.cwd,
+        sessionId,
+        promptChars: rules.length + prompt.length,
+        outputChars: text.length,
+      });
+      await reporter.usage({
+        engine: "grok",
+        model: "grok-4",
+        phase: "research",
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        cacheRead: 0,
+        cacheWrite: 0,
+      });
       const { report, lessons } = splitResearchLessons(text);
       return { text: report, isError: false, lessons };
     } catch (err) {

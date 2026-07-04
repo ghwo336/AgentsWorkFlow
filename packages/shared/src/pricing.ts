@@ -7,7 +7,7 @@
 // the hypothetical API-rate equivalent so Claude and Codex can be compared on
 // the same axis. Edit these as prices change.
 
-export type Engine = "claude" | "codex";
+export type Engine = "claude" | "codex" | "grok";
 
 export interface ModelRate {
   input: number; // per 1M uncached input tokens
@@ -29,6 +29,9 @@ export const PRICING: Record<string, ModelRate> = {
   "gpt-5.1-codex": { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0 },
   "gpt-5-codex": { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0 },
   "gpt-5": { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0 },
+  // ── Grok (xAI, API-equivalent estimate — 실제로는 X 구독 OAuth, 과금 없음).
+  // 토큰 수 자체가 추정치(세션 파일 contextTokensUsed + 문자수)라 비용도 근사치.
+  "grok-4": { input: 3, output: 15, cacheRead: 0.75, cacheWrite: 0 },
 };
 
 // Fallback rate used when a model id isn't in the table, so cost is never

@@ -96,8 +96,9 @@ export interface CodexVerdict {
 }
 
 // One model invocation's token usage, as captured by the orchestrator.
+// grok은 CLI가 토큰 수를 안 주므로 세션 파일/문자수 기반 추정치다.
 export interface UsageRecord {
-  engine: "claude" | "codex";
+  engine: "claude" | "codex" | "grok";
   model: string;
   phase: Phase;
   // Roster agent id this invocation belongs to (hojae/taekyung/…), for the

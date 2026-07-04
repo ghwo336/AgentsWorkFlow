@@ -107,6 +107,9 @@ export default async function UsagePage({
   const byModel = groupBy(rows, (r) => `${r.engine}__${r.model}`);
   const byAgent = groupBy(rows, agentKeyOf);
   const byProject = groupBy(allRows, (r) => r.project);
+  // 프로젝트별 표의 엔진 컬럼 — 실제 기록에 있는 엔진만 (하드코딩하면 새
+  // 엔진(grok 등)이 추가될 때마다 이 표가 거짓말을 한다).
+  const engines = [...new Set(allRows.map((r) => r.engine))].sort();
 
   // Tab/filter hrefs keep the other dimension's selection.
   const href = (p?: string, v?: string) => {
@@ -140,8 +143,9 @@ export default async function UsagePage({
           ))}
         </div>
         <div className="muted small" style={{ marginTop: 8 }}>
-          Codex는 ChatGPT 구독으로 실행되어 실제 API 청구가 없습니다 — 아래 금액은
-          동일 기준 비교를 위한 <b>API 요금 환산 추정치</b>입니다.
+          Codex(ChatGPT 구독)와 Grok(X 구독)은 실제 API 청구가 없습니다 — 아래 금액은
+          동일 기준 비교를 위한 <b>API 요금 환산 추정치</b>입니다. Grok은 CLI가 토큰
+          수를 주지 않아 <b>토큰 수 자체도 추정치</b>(세션 컨텍스트 사용량 기반)입니다.
         </div>
       </div>
 
@@ -238,7 +242,15 @@ export default async function UsagePage({
               return (
                 <tr key={k}>
                   <td>
-                    <span className={`badge b-${engine === "codex" ? "verifying" : "committed"}`}>
+                    <span
+                      className={`badge b-${
+                        engine === "codex"
+                          ? "verifying"
+                          : engine === "grok"
+                            ? "awaiting_approval"
+                            : "committed"
+                      }`}
+                    >
                       {engine}
                     </span>
                   </td>
@@ -274,8 +286,11 @@ export default async function UsagePage({
             <thead>
               <tr>
                 <th>Project</th>
-                <th style={{ textAlign: "right" }}>Claude</th>
-                <th style={{ textAlign: "right" }}>Codex</th>
+                {engines.map((e) => (
+                  <th key={e} style={{ textAlign: "right", textTransform: "capitalize" }}>
+                    {e}
+                  </th>
+                ))}
                 <th style={{ textAlign: "right" }}>총 토큰</th>
                 <th style={{ textAlign: "right" }}>총 비용</th>
               </tr>
@@ -286,12 +301,11 @@ export default async function UsagePage({
                   <td>
                     <a href={`/usage?project=${encodeURIComponent(p)}`}>{p}</a>
                   </td>
-                  <td style={{ textAlign: "right" }}>
-                    {fmtUsd(sum(pr.filter((r) => r.engine === "claude"), (r) => r.costUsd))}
-                  </td>
-                  <td style={{ textAlign: "right" }}>
-                    {fmtUsd(sum(pr.filter((r) => r.engine === "codex"), (r) => r.costUsd))}
-                  </td>
+                  {engines.map((e) => (
+                    <td key={e} style={{ textAlign: "right" }}>
+                      {fmtUsd(sum(pr.filter((r) => r.engine === e), (r) => r.costUsd))}
+                    </td>
+                  ))}
                   <td style={{ textAlign: "right" }}>{fmtTok(sum(pr, tokensOf))}</td>
                   <td style={{ textAlign: "right" }}>{fmtUsd(sum(pr, (r) => r.costUsd))}</td>
                 </tr>
