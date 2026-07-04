@@ -114,6 +114,9 @@ export interface ResearchRequest {
   cwd: string;
   // 리서처의 승인된 방법론 교훈 (learn-store) — 프롬프트 주입용.
   learned?: string;
+  // 후속 질문일 때: 지금까지의 대화 (이전 질문들과 보고서들, 시간순).
+  // question은 이 이력에 이어지는 새 질문이다.
+  history?: Array<{ role: "user" | "researcher"; text: string }>;
 }
 
 // 리서치 결과 = 보고서 + (선택) 리서처가 스스로 제안한 방법론 교훈. 교훈은

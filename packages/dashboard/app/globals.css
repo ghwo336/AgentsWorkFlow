@@ -79,7 +79,7 @@ a:hover { text-decoration: underline; }
   font-size: 11px; border: 2px solid var(--border);
   background: var(--panel-2);
 }
-.b-committed { color: var(--green); border-color: var(--green); }
+.b-committed, .b-reported { color: var(--green); border-color: var(--green); }
 .b-rejected, .b-failed { color: var(--red); border-color: var(--red); }
 .b-building, .b-verifying, .b-planning, .b-researching { color: var(--yellow); border-color: var(--yellow); }
 .b-awaiting_approval { color: var(--accent); border-color: var(--accent); }

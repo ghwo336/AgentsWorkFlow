@@ -8,7 +8,7 @@ import { clarify, interveneChatForRun } from "./chat.js";
 import { config } from "./config.js";
 import { registerAgentRoutes } from "./http-agents.js";
 import { registerDataRoutes } from "./http-data.js";
-import { resolveApproval, resolveInput, retryRun, startRun } from "./runner.js";
+import { followUpResearch, resolveApproval, resolveInput, retryRun, startRun } from "./runner.js";
 import { sweepOrphans } from "./startup-sweep.js";
 import { assertAllowedTargetDir, TargetDirError } from "./workspace-path.js";
 
@@ -133,6 +133,21 @@ app.post("/runs/:id/intervene-chat", async (req, reply) => {
   } catch (err) {
     return reply.code(502).send({ error: (err as Error)?.message ?? "chat failed" });
   }
+});
+
+// 리서치 후속 질문 — reported 상태의 리서치 run에 대화를 이어 붙인다.
+const FollowUpSchema = z.object({ question: z.string().min(1) });
+app.post("/runs/:id/research-followup", async (req, reply) => {
+  const { id } = req.params as { id: string };
+  const parsed = FollowUpSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return reply.code(400).send({ error: parsed.error.flatten() });
+  }
+  const ok = await followUpResearch(id, parsed.data.question);
+  if (!ok) {
+    return reply.code(409).send({ error: "후속 질문을 받을 수 있는 리서치 run이 아닙니다." });
+  }
+  return { ok: true };
 });
 
 // Re-run a stopped run (rejected/failed/needs_input) from where it left off.

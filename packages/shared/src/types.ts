@@ -8,6 +8,7 @@ export type RunStatus =
   | "researching" // 리서치 전용 run — 상현이 조사/보고서 작성 중
   | "needs_input" // a step exhausted retries + 호재 escalation → waiting for the user
   | "committed"
+  | "reported" // 리서치 완료 — 보고서가 나왔고 후속 질문을 받을 수 있는 상태
   | "rejected"
   | "failed"
   | "cancelled";

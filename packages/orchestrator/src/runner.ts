@@ -234,6 +234,20 @@ export async function resolveInput(
   return true;
 }
 
+// 리서치 run에 후속 질문을 잇는다 — 보고서가 나온(reported, 구버전 committed)
+// run이나 실패한 run에서만. 조사 중(researching)에는 409. 이전 스레드를 맥락
+// 삼아 같은 run에 새 보고서를 이어 붙인다.
+const FOLLOWUP_OK = new Set(["reported", "committed", "failed"]);
+export async function followUpResearch(runId: string, question: string): Promise<boolean> {
+  const st = await store.getResumeState(runId);
+  if (!st || !st.targetDir) return false;
+  if (runModeOf(rosterOf(st.agents)) !== "research") return false;
+  if (!FOLLOWUP_OK.has(st.status)) return false;
+  const reporter = new DbRunReporter(runId);
+  pipeline.researchFollowUp(runId, question, st.targetDir, reporter).catch(onFatal(reporter));
+  return true;
+}
+
 // Re-open a run that ended (rejected/failed) or is parked (needs_input) and
 // continue the build from where it stopped — pipeline.build resumes at the first
 // not-yet-committed step, now with the full retry + 호재 escalation ladder. Needs

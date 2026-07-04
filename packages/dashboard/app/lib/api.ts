@@ -117,6 +117,21 @@ export const api = {
   // 잘려 온 step summary의 전문 — 작업 요약에서 더보기를 눌렀을 때만.
   getStep: (id: string) => getJson<Step>(`/api/steps/${id}`, "작업 내용 로드 실패"),
 
+  // 리서치 스레드용 상세 — 대화(질문/보고서)가 본체라 chat을 넉넉히 가져온다.
+  getResearchRun: (id: string) =>
+    getJson<RunDetail>(
+      `/api/runs/${id}?eventsTake=${LOG_PAGE}&chatTake=100&verdicts=0`,
+      "리서치 상세 로드 실패"
+    ),
+
+  // 리서치 후속 질문 — reported 상태의 run에 대화를 이어 붙인다.
+  researchFollowUp: (id: string, question: string) =>
+    postJson<unknown>(
+      `/api/orchestrator/runs/${id}/research-followup`,
+      { question },
+      "후속 질문 전송 실패"
+    ),
+
   // 프로젝트의 최신 run 상세를 한 왕복에 — 첫 진입의 목록→선택→상세 폭포 제거.
   // null = 아직 run이 없는 프로젝트 (에러 아님).
   getLatestRun: async (project: string): Promise<RunDetail | null> => {

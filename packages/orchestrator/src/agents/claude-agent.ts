@@ -431,12 +431,25 @@ export class ClaudeResearcher implements Researcher {
   ) {}
 
   async research(req: ResearchRequest, reporter: PhaseReporter): Promise<ResearchResult> {
+    // 후속 질문이면 지금까지의 스레드를 맥락으로 싣는다 — 각 턴은 길이 상한을
+    // 두고(보고서가 길다), 최근 턴 위주로 자른다.
+    const historyBlock = req.history?.length
+      ? [
+          `# 지금까지의 리서치 대화 (맥락 — 이미 답한 내용은 반복하지 말 것)`,
+          ...req.history
+            .slice(-8)
+            .map((t) => `${t.role === "user" ? "[질문]" : "[상현의 보고서]"}\n${t.text.slice(0, 4000)}`),
+        ].join("\n\n")
+      : "";
     const prompt = [
       learnedBlock(req.learned),
-      `# 리서치 질문`,
+      historyBlock,
+      req.history?.length ? `# 후속 질문` : `# 리서치 질문`,
       req.question,
       ``,
-      `웹을 조사해서 위 질문에 대한 보고서를 작성하세요. 보고서 전문을 마지막 응답 메시지에 그대로 담으세요.`,
+      req.history?.length
+        ? `위 대화에 이어지는 후속 질문입니다. 필요한 부분만 새로 조사해서 후속 질문에 답하는 보고서를 작성하세요 — 이전 보고서 내용은 참조만 하고 다시 쓰지 마세요. 보고서 전문을 마지막 응답 메시지에 그대로 담으세요.`
+        : `웹을 조사해서 위 질문에 대한 보고서를 작성하세요. 보고서 전문을 마지막 응답 메시지에 그대로 담으세요.`,
     ]
       .filter(Boolean)
       .join("\n");

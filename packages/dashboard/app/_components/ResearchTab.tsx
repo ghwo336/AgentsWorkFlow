@@ -1,27 +1,38 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { agentById, PixelAvatar, RESEARCH_PROJECT, ROLE_COLOR } from "../lib/agents";
 import { api } from "../lib/api";
 import { Markdown } from "../lib/Markdown";
 import type { Run, RunDetail } from "../lib/types";
 
-// 홈의 🔍 리서치 탭 — 프로젝트/코드 파이프라인과 분리된 리서치 전용 화면.
-// 질문을 제출하면 상현(리서처) 단독 run이 예약 프로젝트(RESEARCH_PROJECT)에
-// 생기고, 완료되면 보고서(run.plan)를 여기서 바로 읽는다.
+// 홈의 🔍 리서치 탭 — 리서치 하나가 "탭 하나 = 대화 스레드 하나"다. 질문을
+// 제출하면 상현 단독 run이 생기고, 보고서가 나온 뒤에도(reported) 같은 탭에서
+// 후속 질문을 이어갈 수 있다 — 이전 질문/보고서가 맥락으로 상현에게 전달된다.
+// 스레드 본문은 run의 팀 채팅(user 질문 ↔ research 보고서)으로 그린다.
 
 const RESEARCHER = "sanghyun";
 const RESEARCH_SEAT = `research:${RESEARCHER}`;
 
+// 리서치 화면용 상태 라벨 — 코드 파이프라인 어휘(committed)를 그대로 노출하지
+// 않는다. committed는 reported 도입 전의 리서치 run (하위 호환).
+const STATUS_LABEL: Record<string, string> = {
+  reported: "완료",
+  committed: "완료",
+  researching: "조사 중",
+  planning: "준비 중",
+  failed: "실패",
+};
+const statusLabel = (s: string) => STATUS_LABEL[s] ?? s;
+const isRunning = (s: string) => s === "researching" || s === "planning";
+
 // refreshKey: 부모(HomeClient)가 SSE 이벤트마다 올려주는 카운터 — 값이 바뀔
-// 때마다 목록과 열려 있는 상세를 다시 읽는다 (EventSource는 부모 것 하나만 사용).
+// 때마다 목록과 열려 있는 스레드를 다시 읽는다 (EventSource는 부모 것 하나만 사용).
 export function ResearchTab({ refreshKey }: { refreshKey: number }) {
   const [runs, setRuns] = useState<Run[]>([]);
-  const [question, setQuestion] = useState("");
-  const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [detail, setDetail] = useState<RunDetail | null>(null);
+  // null = "＋ 새 리서치" 탭.
+  const [activeId, setActiveId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -37,18 +48,55 @@ export function ResearchTab({ refreshKey }: { refreshKey: number }) {
     load();
   }, [load, refreshKey]);
 
-  const loadDetail = useCallback(async (id: string) => {
-    try {
-      setDetail(await api.getRun(id));
-    } catch {
-      setDetail(null);
-    }
-  }, []);
+  return (
+    <>
+      <div className="viz-tabs" style={{ marginBottom: 12, flexWrap: "wrap" }}>
+        <button
+          type="button"
+          className={`viz-tab${activeId === null ? " active" : ""}`}
+          onClick={() => setActiveId(null)}
+        >
+          ＋ 새 리서치
+        </button>
+        {runs.map((r) => (
+          <button
+            key={r.id}
+            type="button"
+            className={`viz-tab${activeId === r.id ? " active" : ""}`}
+            onClick={() => setActiveId(r.id)}
+            title={r.title}
+          >
+            {isRunning(r.status) ? "🔎 " : ""}
+            {r.title.length > 18 ? `${r.title.slice(0, 18)}…` : r.title}
+          </button>
+        ))}
+      </div>
 
-  useEffect(() => {
-    if (selectedId) loadDetail(selectedId);
-    else setDetail(null);
-  }, [selectedId, loadDetail, refreshKey]);
+      {error && (
+        <div className="small" style={{ color: "var(--red)", marginBottom: 10 }}>
+          {error}
+        </div>
+      )}
+
+      {activeId === null ? (
+        <NewResearchForm
+          onStarted={(id) => {
+            setActiveId(id);
+            load();
+          }}
+        />
+      ) : (
+        <ResearchThread id={activeId} refreshKey={refreshKey} />
+      )}
+    </>
+  );
+}
+
+function NewResearchForm({ onStarted }: { onStarted: (id: string) => void }) {
+  const [question, setQuestion] = useState("");
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const sanghyun = agentById(RESEARCHER);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -64,8 +112,7 @@ export function ResearchTab({ refreshKey }: { refreshKey: number }) {
         agents: [RESEARCH_SEAT],
       });
       setQuestion("");
-      setSelectedId(id);
-      await load();
+      onStarted(id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "리서치 시작 실패");
     } finally {
@@ -73,131 +120,173 @@ export function ResearchTab({ refreshKey }: { refreshKey: number }) {
     }
   }
 
-  const sanghyun = agentById(RESEARCHER);
-
   return (
-    <>
-      <form className="panel" onSubmit={submit}>
-        <div className="row" style={{ gap: 10, alignItems: "center" }}>
-          <PixelAvatar agent={sanghyun} size={40} />
-          <div>
-            <b className="pixel">🔍 새 리서치</b>
-            <div className="muted small" style={{ marginTop: 2 }}>
-              상현이 웹을 조사해서 근거 있는 보고서로 답해요.
-            </div>
+    <form className="panel" onSubmit={submit}>
+      <div className="row" style={{ gap: 10, alignItems: "center" }}>
+        <PixelAvatar agent={sanghyun} size={40} />
+        <div>
+          <b className="pixel">🔍 새 리서치</b>
+          <div className="muted small" style={{ marginTop: 2 }}>
+            상현이 웹을 조사해서 근거 있는 보고서로 답해요. 보고서가 나온 뒤에도 같은 탭에서 계속
+            물어볼 수 있어요.
           </div>
-        </div>
-        <div style={{ height: 10 }} />
-        <textarea
-          placeholder="궁금한 것을 물어보세요 (예: 2026년 기준 Next.js와 Remix 중 무엇을 쓰는 게 좋을까? 근거와 함께)"
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-          rows={3}
-          style={{ width: "100%", resize: "vertical" }}
-        />
-        <div style={{ height: 8 }} />
-        <button type="submit" disabled={starting || !question.trim()}>
-          {starting ? "시작하는 중…" : "조사 시작 →"}
-        </button>
-      </form>
-
-      <div className="panel">
-        <b>리서치 기록</b>
-        <div style={{ height: 12 }} />
-        {error && (
-          <div className="small" style={{ color: "var(--red)", marginBottom: 10 }}>
-            {error}
-          </div>
-        )}
-        <div style={{ display: "grid", gap: 10 }}>
-          {runs.map((r) => (
-            <button
-              key={r.id}
-              type="button"
-              className="row spread"
-              onClick={() => setSelectedId(selectedId === r.id ? null : r.id)}
-              style={{
-                padding: "12px 14px",
-                border: `1px solid ${selectedId === r.id ? ROLE_COLOR.research : "var(--border)"}`,
-                borderRadius: 8,
-                background: "transparent",
-                color: "var(--text)",
-                textAlign: "left",
-                cursor: "pointer",
-                boxShadow: "none",
-                fontWeight: 400,
-              }}
-            >
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontWeight: 600 }}>{r.title}</div>
-                <div className="muted small" style={{ marginTop: 2 }}>
-                  {new Date(r.createdAt).toLocaleString()}
-                </div>
-              </div>
-              <span className={`badge b-${r.status}`}>{r.status}</span>
-            </button>
-          ))}
-          {runs.length === 0 && (
-            <span className="muted small">아직 리서치가 없습니다. 위에서 질문해 보세요.</span>
-          )}
         </div>
       </div>
-
-      {selectedId && detail && <ResearchReport detail={detail} onRetry={load} />}
-    </>
+      <div style={{ height: 10 }} />
+      <textarea
+        placeholder="궁금한 것을 물어보세요 (예: 2026년 기준 Next.js와 Remix 중 무엇을 쓰는 게 좋을까? 근거와 함께)"
+        value={question}
+        onChange={(e) => setQuestion(e.target.value)}
+        rows={3}
+        style={{ width: "100%", resize: "vertical" }}
+      />
+      <div style={{ height: 8 }} />
+      <button type="submit" disabled={starting || !question.trim()}>
+        {starting ? "시작하는 중…" : "조사 시작 →"}
+      </button>
+    </form>
   );
 }
 
-function ResearchReport({ detail, onRetry }: { detail: RunDetail; onRetry: () => void }) {
+// 리서치 스레드 하나 — 대화(질문↔보고서) + 후속 질문 입력. 첫 말풍선은
+// run.brief(최초 질문), 이후는 팀 채팅의 user/research 턴.
+function ResearchThread({ id, refreshKey }: { id: string; refreshKey: number }) {
+  const [detail, setDetail] = useState<RunDetail | null>(null);
+  const [question, setQuestion] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const sanghyun = agentById(RESEARCHER);
-  const running = detail.status === "researching" || detail.status === "planning";
+  // 탭 전환 시 이전 스레드가 잠깐 비치지 않도록 id가 바뀌면 즉시 비운다.
+  const shownId = useRef(id);
+  if (shownId.current !== id) {
+    shownId.current = id;
+    if (detail) setDetail(null);
+  }
+
+  const load = useCallback(async () => {
+    try {
+      setDetail(await api.getResearchRun(id));
+    } catch {
+      /* 다음 refresh에서 재시도 */
+    }
+  }, [id]);
+
+  useEffect(() => {
+    load();
+  }, [load, refreshKey]);
+
+  if (!detail) return <div className="panel muted small">스레드 불러오는 중…</div>;
+
+  const running = isRunning(detail.status);
+  const turns = detail.chatMsgs.filter((m) => m.role === "user" || m.role === "research");
+  // 채팅 기록이 없는 옛 run(스레드 도입 전) 호환: 보고서는 Run.plan에만 있다.
+  const legacyReport = !running && !turns.some((m) => m.role === "research") ? detail.plan : null;
   const lastEvents = detail.events.slice(-5);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const q = question.trim();
+    if (!q || sending || running) return;
+    setSending(true);
+    try {
+      await api.researchFollowUp(id, q);
+      setQuestion("");
+      setError(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "후속 질문 전송 실패");
+    } finally {
+      setSending(false);
+    }
+  }
 
   return (
     <div className="panel">
       <div className="row spread" style={{ alignItems: "flex-start" }}>
         <b className="agent-chip">
           <PixelAvatar agent={sanghyun} size={22} active={running} />
-          <span style={{ color: ROLE_COLOR.research }}>상현의 리서치 보고서</span>
-          <span className="muted small">({sanghyun.engineLabel})</span>
+          <span style={{ color: ROLE_COLOR.research }}>{detail.title}</span>
         </b>
-        <span className={`badge b-${detail.status}`}>{detail.status}</span>
-      </div>
-      <div className="muted small" style={{ margin: "8px 0" }}>
-        {detail.brief}
+        <span className={`badge b-${detail.status}`}>{statusLabel(detail.status)}</span>
       </div>
 
-      {running && (
-        <div style={{ marginTop: 8 }}>
-          <div className="small">🔎 조사 중… 완료되면 여기에 보고서가 나타나요.</div>
-          <div className="log" style={{ marginTop: 8 }}>
-            {lastEvents.map((ev) => (
-              <div key={ev.id} className="line">
-                <span className={ev.level === "error" ? "err" : ev.level === "warn" ? "warn" : ""}>
-                  {ev.message}
-                </span>
+      {/* 보고서가 길다 — 공용 chat-thread의 280px 상한을 스레드용으로 늘린다 */}
+      <div className="chat-thread" style={{ marginTop: 12, maxHeight: "62vh" }}>
+        <ThreadBubble role="user" text={detail.brief ?? ""} />
+        {turns.map((m) =>
+          m.text ? <ThreadBubble key={m.id} role={m.role === "user" ? "user" : "research"} text={m.text} /> : null
+        )}
+        {legacyReport && <ThreadBubble role="research" text={legacyReport} />}
+        {running && (
+          <div className="chat-msg chat-assistant">
+            <span className="chat-who">상현</span>
+            <div className="chat-bubble">
+              <div className="small">🔎 조사 중… 완료되면 여기에 보고서가 나타나요.</div>
+              <div className="log" style={{ marginTop: 8 }}>
+                {lastEvents.map((ev) => (
+                  <div key={ev.id} className="line">
+                    <span className={ev.level === "error" ? "err" : ev.level === "warn" ? "warn" : ""}>
+                      {ev.message}
+                    </span>
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {detail.error && (
         <div className="small" style={{ color: "var(--red)", marginTop: 8, whiteSpace: "pre-wrap" }}>
           {detail.error}
         </div>
       )}
-      {!running && !detail.plan && (
-        <button type="button" style={{ marginTop: 8 }} onClick={() => api.retry(detail.id).then(onRetry)}>
-          다시 조사하기
-        </button>
-      )}
-
-      {detail.plan && (
-        <div style={{ marginTop: 10 }}>
-          <Markdown>{detail.plan}</Markdown>
+      {error && (
+        <div className="small" style={{ color: "var(--red)", marginTop: 8 }}>
+          {error}
         </div>
       )}
+
+      {!running && (
+        <form onSubmit={submit} style={{ marginTop: 12 }}>
+          <textarea
+            placeholder={
+              detail.status === "failed"
+                ? "조사가 실패했어요 — 질문을 다시 보내면 이어서 시도해요."
+                : "후속 질문을 이어서 물어보세요 — 상현이 위 대화를 기억한 채로 답해요."
+            }
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            rows={2}
+            style={{ width: "100%", resize: "vertical" }}
+          />
+          <div style={{ height: 8 }} />
+          <button type="submit" disabled={sending || !question.trim()}>
+            {sending ? "보내는 중…" : "후속 질문 →"}
+          </button>
+        </form>
+      )}
+    </div>
+  );
+}
+
+function ThreadBubble({ role, text }: { role: "user" | "research"; text: string }) {
+  const sanghyun = agentById(RESEARCHER);
+  const mine = role === "user";
+  return (
+    <div className={`chat-msg ${mine ? "chat-user" : "chat-assistant"}`}>
+      <span className="chat-who">
+        {mine ? (
+          "나"
+        ) : (
+          <span className="row" style={{ gap: 4, alignItems: "center" }}>
+            <PixelAvatar agent={sanghyun} size={16} /> 상현
+          </span>
+        )}
+      </span>
+      <div className="chat-bubble">
+        <Markdown className="md">{text}</Markdown>
+      </div>
     </div>
   );
 }

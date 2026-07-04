@@ -5,7 +5,7 @@ import { directBuild } from "./direct-build.js";
 import { build, plan } from "./full.js";
 import { resumeFromInput } from "./intervention.js";
 import { planOnly } from "./plan-only.js";
-import { research } from "./research.js";
+import { research, researchFollowUp } from "./research.js";
 import { verifyOnly } from "./verify-only.js";
 import type { PipelineDeps } from "./types.js";
 
@@ -54,6 +54,10 @@ export class RunPipeline {
 
   research(runId: string, question: string, targetDir: string, reporter: RunReporter): Promise<void> {
     return research(this.deps, runId, question, targetDir, reporter);
+  }
+
+  researchFollowUp(runId: string, question: string, targetDir: string, reporter: RunReporter): Promise<void> {
+    return researchFollowUp(this.deps, runId, question, targetDir, reporter);
   }
 
   verifyOnly(
