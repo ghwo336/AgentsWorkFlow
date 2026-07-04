@@ -52,12 +52,24 @@ export class RunPipeline {
     return planOnly(this.deps, runId, brief, targetDir, reporter);
   }
 
-  research(runId: string, question: string, targetDir: string, reporter: RunReporter): Promise<void> {
-    return research(this.deps, runId, question, targetDir, reporter);
+  research(
+    runId: string,
+    question: string,
+    targetDir: string,
+    reporter: RunReporter,
+    roster: RunRoster
+  ): Promise<void> {
+    return research(this.deps, runId, question, targetDir, reporter, roster);
   }
 
-  researchFollowUp(runId: string, question: string, targetDir: string, reporter: RunReporter): Promise<void> {
-    return researchFollowUp(this.deps, runId, question, targetDir, reporter);
+  researchFollowUp(
+    runId: string,
+    question: string,
+    targetDir: string,
+    reporter: RunReporter,
+    roster: RunRoster
+  ): Promise<void> {
+    return researchFollowUp(this.deps, runId, question, targetDir, reporter, roster);
   }
 
   verifyOnly(

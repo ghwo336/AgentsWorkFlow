@@ -59,6 +59,9 @@ export const config = {
   researchModel: process.env.RESEARCH_MODEL ?? "claude-opus-4-8",
   // Run 종료 후 회고(팀 학습 노트 교훈 추출) — 요약성 작업이라 기본 Sonnet.
   reflectModel: process.env.REFLECT_MODEL ?? "claude-sonnet-4-6",
+  // Grok Build CLI 바이너리 (리서처 상현 — X 실시간 검색). launchd 프로세스의
+  // PATH에는 ~/.grok/bin이 없으므로 절대 경로로. 인증: grok login (구독 OAuth).
+  grokBin: process.env.GROK_BIN ?? join(homedir(), ".grok", "bin", "grok"),
   codexModel: resolveCodexModel(),
   // Second-opinion LLM reviewer (유준) — runtime/integration lens in the fan-out.
   reviewModel: process.env.REVIEW_MODEL ?? "claude-sonnet-4-6",

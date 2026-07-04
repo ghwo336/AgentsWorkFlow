@@ -111,15 +111,21 @@ export class RunStore {
     return r?.project ?? null;
   }
 
-  // 리서치 run의 대화 스레드 — 사용자 질문(user)과 상현의 보고서(research)만,
+  // 리서치 run의 대화 스레드 — 사용자 질문(user)과 리서처들의 보고서(research)만,
   // 시간순. 후속 질문 시 리서처에게 넘길 맥락이다 (최초 질문은 Run.brief라
-  // 여기 없음 — 호출부가 앞에 붙인다).
-  async getResearchThread(runId: string): Promise<Array<{ role: "user" | "researcher"; text: string }>> {
+  // 여기 없음 — 호출부가 앞에 붙인다). agent = 보고서 화자(sanghyun/yerim).
+  async getResearchThread(
+    runId: string
+  ): Promise<Array<{ role: "user" | "researcher"; agent: string | null; text: string }>> {
     const rows = await prisma.chatMsg.findMany({
       where: { runId, role: { in: ["user", "research"] } },
       orderBy: { ts: "asc" },
     });
-    return rows.map((r) => ({ role: r.role === "user" ? ("user" as const) : ("researcher" as const), text: r.text }));
+    return rows.map((r) => ({
+      role: r.role === "user" ? ("user" as const) : ("researcher" as const),
+      agent: r.agent,
+      text: r.text,
+    }));
   }
 
   // Everything needed to resume a run at the approval boundary from the DB.

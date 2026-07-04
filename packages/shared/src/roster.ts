@@ -38,7 +38,11 @@ export const SEATS: RosterSeat[] = [
   { key: "verify:donghwan", agentId: "donghwan", name: "동환", role: "verify", reviewerNames: ["보안"] },
   { key: "verify:yujun", agentId: "yujun", name: "유준", role: "verify", reviewerNames: ["통합"] },
   { key: "verify:seongho", agentId: "seongho", name: "성호", role: "verify", reviewerNames: ["빌드", "tests"] },
-  { key: "research:sanghyun", agentId: "sanghyun", name: "상현", role: "research", specialty: "리서치" },
+  // 리서치는 2인 팀 — 리서치 run은 선택된 리서처 전원이 동시에(팬아웃) 조사한다.
+  //   상현(Grok): X(트위터) 실시간 검색 전문 — search_x로 X 내부를 직접 본다.
+  //   예림(Claude): X 밖 웹 전반 — 공식 문서/구글/레딧/기술 매체 종합.
+  { key: "research:sanghyun", agentId: "sanghyun", name: "상현", role: "research", specialty: "X 리서치" },
+  { key: "research:yerim", agentId: "yerim", name: "예림", role: "research", specialty: "웹 리서치" },
 ];
 
 export const ALL_SEAT_KEYS = SEATS.map((s) => s.key);
@@ -62,7 +66,8 @@ export interface RunRoster {
   builderIds: string[]; // 참여 개발자의 person id (attempt 순환 배정 순서)
   reviewerNames: string[]; // fan-out에 포함할 Reviewer.name 목록
   verifierIds: string[]; // 참여 검증자의 person id (표시용)
-  researcher: boolean; // 상현 참여 여부 (리서치 전용 run)
+  researcher: boolean; // 리서처 참여 여부 (리서치 전용 run)
+  researcherIds: string[]; // 참여 리서처의 person id — 리서치 팬아웃 대상
 }
 
 // Parse a Run.agents JSON column (seat keys). null/invalid/empty → null (= 전원).
@@ -83,12 +88,14 @@ export function rosterOf(keys: string[] | null | undefined): RunRoster {
   const seats = selected.map((k) => byKey.get(k)!);
   const of = (role: RosterRole) => seats.filter((s) => s.role === role);
   const verify = of("verify");
+  const research = of("research");
   return {
     planner: of("plan").length > 0,
     builderIds: of("build").map((s) => s.agentId),
     verifierIds: verify.map((s) => s.agentId),
     reviewerNames: verify.flatMap((s) => s.reviewerNames ?? []),
-    researcher: of("research").length > 0,
+    researcher: research.length > 0,
+    researcherIds: research.map((s) => s.agentId),
   };
 }
 
@@ -157,9 +164,9 @@ export function validateAgents(keys: string[]): string | null {
   const unknown = keys.filter((k) => !byKey.has(k));
   if (unknown.length > 0) return `알 수 없는 에이전트입니다: ${unknown.join(", ")}`;
   const r = rosterOf(keys);
-  // 리서치는 단독 run — 코드 파이프라인(기획/개발/검증)과 섞을 수 없다.
-  if (r.researcher && keys.length > 1) {
-    return "리서치는 상현 단독으로만 실행할 수 있습니다 — 다른 에이전트와 함께 선택할 수 없어요.";
+  // 리서치는 리서처들만의 run — 코드 파이프라인(기획/개발/검증)과 섞을 수 없다.
+  if (r.researcher && keys.length > r.researcherIds.length) {
+    return "리서치는 리서처(상현·예림)만으로 실행할 수 있습니다 — 다른 역할과 함께 선택할 수 없어요.";
   }
   // planOnly는 기획서만 쓰고 끝난다 — 검증자가 같이 있으면 그 검증은 영영 안
   // 돌므로 실행 불가능한 조합으로 거절한다.

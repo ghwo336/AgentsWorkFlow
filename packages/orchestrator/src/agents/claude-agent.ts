@@ -35,7 +35,8 @@ function workspaceRule(cwd: string): string {
 
 // 팀 학습 노트 프롬프트 블록 — learn-store가 렌더링한 교훈 불릿을 싣는다.
 // 교훈은 전부 [조건] 접두를 달고 있으므로, 조건이 맞을 때만 따르라고 명시한다.
-function learnedBlock(learned: string | undefined): string {
+// (grok-agent 등 다른 엔진 어댑터도 같은 블록을 쓴다 — export.)
+export function learnedBlock(learned: string | undefined): string {
   if (!learned) return "";
   return [
     `# 팀 학습 노트 (과거 run에서 배운 것 — 각 항목의 [조건]이 이 작업에 해당할 때만 적용)`,
@@ -365,10 +366,15 @@ export class ClaudeBuilder implements Builder {
   }
 }
 
-const RESEARCH_SYSTEM = `You are the RESEARCH agent (리서처) in an agent team.
+const RESEARCH_SYSTEM = `You are the WEB RESEARCH agent (리서처) in an agent team.
 Your job is INVESTIGATION, not coding: answer the user's research question by
 searching the web (WebSearch) and reading sources (WebFetch), then write a
 report. You never modify code or files.
+
+Division of labor: a teammate (상현, Grok) covers X/Twitter with live X search —
+X is behind a login wall you cannot see into, so do NOT try to browse X posts.
+Your ground is everything else: official docs, Google, Reddit, papers, tech
+media, project blogs.
 
 Method:
   - Break the question into the claims/subtopics that must be answered.
@@ -421,9 +427,10 @@ export function splitResearchLessons(text: string): {
   }
 }
 
-// Claude research agent (상현): web-search driven investigation that ends in
+// Claude research agent (예림): web-search driven investigation that ends in
 // an inline Korean report. Read-only — the run has no diff, no commit; the
-// report itself is the deliverable. Personal harness: agents-config/sanghyun.md.
+// report itself is the deliverable. Personal harness: agents-config/yerim.md.
+// (X 전담 동료는 GrokResearcher(상현) — grok-agent.ts.)
 export class ClaudeResearcher implements Researcher {
   constructor(
     private readonly model: string,
@@ -457,7 +464,7 @@ export class ClaudeResearcher implements Researcher {
       cwd: req.cwd,
       // 읽기 전용: 파일 수정 없이 조사만 한다. 웹 도구는 plan 모드에서도 동작.
       permissionMode: "plan",
-      systemPrompt: withHarness(RESEARCH_SYSTEM, this.harness, "상현"),
+      systemPrompt: withHarness(RESEARCH_SYSTEM, this.harness, "예림"),
       canUseTool: workspaceGuard(req.cwd),
       disallowedTools: ["Write", "Edit", "MultiEdit", "NotebookEdit", "Task"],
     });

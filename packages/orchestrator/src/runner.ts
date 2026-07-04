@@ -4,6 +4,7 @@ import { ClaudeReviewer } from "./agents/claude-reviewer.js";
 import { CodexVerifier } from "./agents/codex-agent.js";
 import { CommandReviewer } from "./agents/command-reviewer.js";
 import { lensWithHarness, loadHarness } from "./agents/harness.js";
+import { GrokResearcher } from "./agents/grok-agent.js";
 import { ensureLearnedDirs } from "./agents/learn-store.js";
 import { ClaudeReflector } from "./agents/reflector.js";
 import { QUALITY_LENS, SECURITY_LENS } from "./agents/review-policy.js";
@@ -84,8 +85,25 @@ const pipeline = new RunPipeline({
   builder: new ClaudeBuilder(config.buildModel),
   buildersById,
   reviewers,
-  // 리서처(상현) — 웹 조사 + 보고서. 하네스: agents-config/sanghyun.md.
-  researcher: new ClaudeResearcher(config.researchModel, harnessOf("sanghyun")),
+  // 리서치 팬아웃 — 리서치 run은 선택된 리서처 전원이 동시에 조사한다.
+  //   상현(Grok Build CLI, X 구독 OAuth) — X 실시간 검색 전담 (search_x)
+  //   예림(Claude Opus)                — X 밖 웹 전반 (문서/구글/레딧/매체)
+  researchers: [
+    {
+      agentId: "sanghyun",
+      name: "상현",
+      engine: "grok",
+      model: "grok",
+      researcher: new GrokResearcher(config.grokBin, harnessOf("sanghyun")),
+    },
+    {
+      agentId: "yerim",
+      name: "예림",
+      engine: "claude",
+      model: config.researchModel,
+      researcher: new ClaudeResearcher(config.researchModel, harnessOf("yerim")),
+    },
+  ],
   // 회고 — run 종료 후 실패 이력에서 교훈을 뽑아 학습 노트/제안함에 쌓는다.
   reflector: new ClaudeReflector(config.reflectModel),
   git,
@@ -155,8 +173,8 @@ export async function startRun(input: StartInput): Promise<string> {
     case "planOnly": // 기획만 — 계획서 작성 후 종료
       pipeline.planOnly(id, input.brief, targetDir, reporter).catch(onFatal(reporter));
       break;
-    case "research": // 리서치 — 상현이 웹을 조사해 보고서 작성 후 종료
-      pipeline.research(id, input.brief, targetDir, reporter).catch(onFatal(reporter));
+    case "research": // 리서치 — 리서처들이 동시에 조사해 보고서 작성 후 종료
+      pipeline.research(id, input.brief, targetDir, reporter, roster).catch(onFatal(reporter));
       break;
     case "direct": // 기획 생략 — 승인 없이 바로 구현 (검증은 선택된 만큼)
       pipeline.directBuild(id, input.brief, targetDir, reporter).catch(onFatal(reporter));
@@ -241,10 +259,11 @@ const FOLLOWUP_OK = new Set(["reported", "committed", "failed"]);
 export async function followUpResearch(runId: string, question: string): Promise<boolean> {
   const st = await store.getResumeState(runId);
   if (!st || !st.targetDir) return false;
-  if (runModeOf(rosterOf(st.agents)) !== "research") return false;
+  const roster = rosterOf(st.agents);
+  if (runModeOf(roster) !== "research") return false;
   if (!FOLLOWUP_OK.has(st.status)) return false;
   const reporter = new DbRunReporter(runId);
-  pipeline.researchFollowUp(runId, question, st.targetDir, reporter).catch(onFatal(reporter));
+  pipeline.researchFollowUp(runId, question, st.targetDir, reporter, roster).catch(onFatal(reporter));
   return true;
 }
 
@@ -269,7 +288,7 @@ export async function retryRun(runId: string): Promise<boolean> {
   // 리서치 run도 재개할 빌드가 없다 — 조사를 처음부터 다시 실행.
   if (runModeOf(roster) === "research") {
     await reporter.log("research", "사용자가 리서치를 다시 실행합니다.");
-    pipeline.research(runId, st.brief, st.targetDir, reporter).catch(onFatal(reporter));
+    pipeline.research(runId, st.brief, st.targetDir, reporter, roster).catch(onFatal(reporter));
     return true;
   }
 

@@ -7,12 +7,14 @@ import { Markdown } from "../lib/Markdown";
 import type { Run, RunDetail } from "../lib/types";
 
 // 홈의 🔍 리서치 탭 — 리서치 하나가 "탭 하나 = 대화 스레드 하나"다. 질문을
-// 제출하면 상현 단독 run이 생기고, 보고서가 나온 뒤에도(reported) 같은 탭에서
-// 후속 질문을 이어갈 수 있다 — 이전 질문/보고서가 맥락으로 상현에게 전달된다.
-// 스레드 본문은 run의 팀 채팅(user 질문 ↔ research 보고서)으로 그린다.
+// 제출하면 리서치 팀 run이 생기고 — 상현(Grok)이 X를, 예림(Claude)이 웹을
+// 동시에 조사해 보고서 두 개가 나란히 온다 — 보고서가 나온 뒤에도(reported)
+// 같은 탭에서 후속 질문을 이어갈 수 있다. 스레드 본문은 run의 팀 채팅
+// (user 질문 ↔ research 보고서, 화자는 msg.agent)으로 그린다.
 
-const RESEARCHER = "sanghyun";
-const RESEARCH_SEAT = `research:${RESEARCHER}`;
+const X_RESEARCHER = "sanghyun"; // 상현 (Grok — X 실시간)
+const WEB_RESEARCHER = "yerim"; // 예림 (Claude — 웹 전반)
+const RESEARCH_SEATS = [`research:${X_RESEARCHER}`, `research:${WEB_RESEARCHER}`];
 
 // 리서치 화면용 상태 라벨 — 코드 파이프라인 어휘(committed)를 그대로 노출하지
 // 않는다. committed는 reported 도입 전의 리서치 run (하위 호환).
@@ -96,7 +98,6 @@ function NewResearchForm({ onStarted }: { onStarted: (id: string) => void }) {
   const [question, setQuestion] = useState("");
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const sanghyun = agentById(RESEARCHER);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -109,7 +110,7 @@ function NewResearchForm({ onStarted }: { onStarted: (id: string) => void }) {
         project: RESEARCH_PROJECT,
         title,
         brief: q,
-        agents: [RESEARCH_SEAT],
+        agents: RESEARCH_SEATS,
       });
       setQuestion("");
       onStarted(id);
@@ -123,12 +124,13 @@ function NewResearchForm({ onStarted }: { onStarted: (id: string) => void }) {
   return (
     <form className="panel" onSubmit={submit}>
       <div className="row" style={{ gap: 10, alignItems: "center" }}>
-        <PixelAvatar agent={sanghyun} size={40} />
+        <PixelAvatar agent={agentById(X_RESEARCHER)} size={40} />
+        <PixelAvatar agent={agentById(WEB_RESEARCHER)} size={40} />
         <div>
           <b className="pixel">🔍 새 리서치</b>
           <div className="muted small" style={{ marginTop: 2 }}>
-            상현이 웹을 조사해서 근거 있는 보고서로 답해요. 보고서가 나온 뒤에도 같은 탭에서 계속
-            물어볼 수 있어요.
+            상현(X 실시간)과 예림(웹 전반)이 동시에 조사해서 보고서 두 개로 답해요. 보고서가 나온
+            뒤에도 같은 탭에서 계속 물어볼 수 있어요.
           </div>
         </div>
       </div>
@@ -155,7 +157,6 @@ function ResearchThread({ id, refreshKey }: { id: string; refreshKey: number }) 
   const [question, setQuestion] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const sanghyun = agentById(RESEARCHER);
   // 탭 전환 시 이전 스레드가 잠깐 비치지 않도록 id가 바뀌면 즉시 비운다.
   const shownId = useRef(id);
   if (shownId.current !== id) {
@@ -180,6 +181,7 @@ function ResearchThread({ id, refreshKey }: { id: string; refreshKey: number }) 
   const running = isRunning(detail.status);
   const turns = detail.chatMsgs.filter((m) => m.role === "user" || m.role === "research");
   // 채팅 기록이 없는 옛 run(스레드 도입 전) 호환: 보고서는 Run.plan에만 있다.
+  // 그 시절 리서치는 전부 Claude 리서처(현 예림)의 작업이다.
   const legacyReport = !running && !turns.some((m) => m.role === "research") ? detail.plan : null;
   const lastEvents = detail.events.slice(-5);
 
@@ -204,7 +206,8 @@ function ResearchThread({ id, refreshKey }: { id: string; refreshKey: number }) 
     <div className="panel">
       <div className="row spread" style={{ alignItems: "flex-start" }}>
         <b className="agent-chip">
-          <PixelAvatar agent={sanghyun} size={22} active={running} />
+          <PixelAvatar agent={agentById(X_RESEARCHER)} size={22} active={running} />
+          <PixelAvatar agent={agentById(WEB_RESEARCHER)} size={22} active={running} />
           <span style={{ color: ROLE_COLOR.research }}>{detail.title}</span>
         </b>
         <span className={`badge b-${detail.status}`}>{statusLabel(detail.status)}</span>
@@ -212,16 +215,24 @@ function ResearchThread({ id, refreshKey }: { id: string; refreshKey: number }) 
 
       {/* 보고서가 길다 — 공용 chat-thread의 280px 상한을 스레드용으로 늘린다 */}
       <div className="chat-thread" style={{ marginTop: 12, maxHeight: "62vh" }}>
-        <ThreadBubble role="user" text={detail.brief ?? ""} />
+        <ThreadBubble agentId={null} text={detail.brief ?? ""} />
         {turns.map((m) =>
-          m.text ? <ThreadBubble key={m.id} role={m.role === "user" ? "user" : "research"} text={m.text} /> : null
+          m.text ? (
+            <ThreadBubble
+              key={m.id}
+              agentId={m.role === "user" ? null : (m.agent ?? WEB_RESEARCHER)}
+              text={m.text}
+            />
+          ) : null
         )}
-        {legacyReport && <ThreadBubble role="research" text={legacyReport} />}
+        {legacyReport && <ThreadBubble agentId={WEB_RESEARCHER} text={legacyReport} />}
         {running && (
           <div className="chat-msg chat-assistant">
-            <span className="chat-who">상현</span>
+            <span className="chat-who">리서치팀</span>
             <div className="chat-bubble">
-              <div className="small">🔎 조사 중… 완료되면 여기에 보고서가 나타나요.</div>
+              <div className="small">
+                🔎 상현(X)·예림(웹)이 조사 중… 완료되는 대로 보고서가 하나씩 나타나요.
+              </div>
               <div className="log" style={{ marginTop: 8 }}>
                 {lastEvents.map((ev) => (
                   <div key={ev.id} className="line">
@@ -253,7 +264,7 @@ function ResearchThread({ id, refreshKey }: { id: string; refreshKey: number }) 
             placeholder={
               detail.status === "failed"
                 ? "조사가 실패했어요 — 질문을 다시 보내면 이어서 시도해요."
-                : "후속 질문을 이어서 물어보세요 — 상현이 위 대화를 기억한 채로 답해요."
+                : "후속 질문을 이어서 물어보세요 — 상현·예림이 위 대화를 기억한 채로 답해요."
             }
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
@@ -270,17 +281,18 @@ function ResearchThread({ id, refreshKey }: { id: string; refreshKey: number }) 
   );
 }
 
-function ThreadBubble({ role, text }: { role: "user" | "research"; text: string }) {
-  const sanghyun = agentById(RESEARCHER);
-  const mine = role === "user";
+// agentId = null → 사용자 말풍선, 그 외 → 해당 리서처(상현/예림)의 말풍선.
+function ThreadBubble({ agentId, text }: { agentId: string | null; text: string }) {
+  const mine = agentId === null;
+  const who = mine ? null : agentById(agentId);
   return (
     <div className={`chat-msg ${mine ? "chat-user" : "chat-assistant"}`}>
       <span className="chat-who">
-        {mine ? (
+        {mine || !who ? (
           "나"
         ) : (
           <span className="row" style={{ gap: 4, alignItems: "center" }}>
-            <PixelAvatar agent={sanghyun} size={16} /> 상현
+            <PixelAvatar agent={who} size={16} /> {who.name} · {who.roleLabel}
           </span>
         )}
       </span>

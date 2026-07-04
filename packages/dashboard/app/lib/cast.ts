@@ -10,7 +10,8 @@
 //   보안 검증 (verify) = codex(보안)  → 동환 (보안 전담 감사)
 //   통합 검증 (verify) = Claude(통합) → 유준 (런타임·배선 동작)
 //   QA       (verify) = 빌드(빌드)   → 성호 (빌드/타입체크 실제 실행)
-//   리서치 (research) = Opus        → 상현 (웹 조사 → 보고서)
+//   X 리서치 (research) = Grok      → 상현 (X 실시간 검색 → 보고서)
+//   웹 리서치 (research) = Opus     → 예림 (웹 조사 → 보고서)
 //
 // This module is pure data + lookups so both server and client components can
 // use it. How a character is DRAWN lives in agents.tsx (SVG components).
@@ -197,13 +198,26 @@ export const CAST: Agent[] = [
     id: "sanghyun",
     name: "상현",
     role: "research",
-    roleLabel: "리서치",
-    engineLabel: "Opus",
-    blurb: "웹을 뒤져 근거 있는 조사 보고서를 써요 — 리서치 전문",
+    roleLabel: "X 리서치",
+    engineLabel: "Grok",
+    blurb: "X(트위터)를 실시간 검색해 동향·여론을 조사해요 — X 전문",
     hair: "#2f2a26",
     shirt: "#ffb454",
     accent: "#c77f22",
     feature: "glasses",
+    laptop: MACBOOK_SPACEGRAY,
+  },
+  {
+    id: "yerim",
+    name: "예림",
+    role: "research",
+    roleLabel: "웹 리서치",
+    engineLabel: "Opus",
+    blurb: "문서·구글·레딧을 뒤져 근거 있는 보고서를 써요 — 웹 전문",
+    hair: "#4a2f35",
+    shirt: "#ffd166",
+    accent: "#c77f22",
+    feature: "none",
     laptop: MACBOOK_SILVER,
   },
 ];
