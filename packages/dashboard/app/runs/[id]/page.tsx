@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { ORCH_URL, orchHeaders } from "../../lib/orch";
+import { ORCH_URL, orchHeaders } from "../../lib/server/orch";
 import { DiffView } from "./DiffView";
 import { agentById, agentForEvent, PixelAvatar, ROLE_COLOR } from "../../lib/agents";
 

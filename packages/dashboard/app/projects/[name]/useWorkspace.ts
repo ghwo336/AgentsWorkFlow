@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../../lib/api";
-import { useOrchestratorEvents } from "../../lib/useOrchestratorEvents";
+import { errMsg } from "../../lib/err";
+import { useOrchestratorEvents } from "../../lib/hooks/useOrchestratorEvents";
 import type { ChatMessage, InterventionDecision, Run, RunDetail, StartRunInput } from "../../lib/types";
 
 // Server-rendered first-paint data (page.tsx fetches it orchestrator-local and
@@ -34,7 +35,7 @@ export function useWorkspace(project: string, initial?: WorkspaceInitial) {
 
   // Errors from orchestrator actions add a hint to check the connection.
   const fail = useCallback((err: unknown, fallback: string, hint = false) => {
-    const base = err instanceof Error ? err.message : fallback;
+    const base = errMsg(err, fallback);
     setError(hint ? `${base} - dashboard 서버의 orchestrator 연결을 확인하세요.` : base);
   }, []);
 
@@ -150,13 +151,10 @@ export function useWorkspace(project: string, initial?: WorkspaceInitial) {
       try {
         const e = JSON.parse(m.data);
         if (!e.runId) return;
-        // New run we don't know about yet → refresh the list to catch it.
-        if (!runIdsRef.current.has(e.runId)) {
-          loadRuns();
-          return;
-        }
+        // 어떤 이벤트든 목록은 갱신하고, 화면에 열려 있는 run의 이벤트일 때만
+        // 상세를 다시 받는다 (모르는 새 run이면 목록 갱신이 그걸 잡아 온다).
         loadRuns();
-        if (e.runId === selectedRef.current) loadDetail(e.runId);
+        if (runIdsRef.current.has(e.runId) && e.runId === selectedRef.current) loadDetail(e.runId);
       } catch {}
     },
     [loadRuns, loadDetail]

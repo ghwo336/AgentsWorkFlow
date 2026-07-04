@@ -16,6 +16,7 @@
 // This module is pure data + lookups so both server and client components can
 // use it. How a character is DRAWN lives in agents.tsx (SVG components).
 
+import { REVIEWER_AGENT_ID } from "@agent-loop/shared/roster";
 import type { Step } from "./types";
 
 // Selection vocabulary shared with the orchestrator (seat keys, run roster
@@ -304,15 +305,10 @@ export function membersOf(role: Role): Agent[] {
 // ── Verify seats map by REVIEWER IDENTITY ───────────────────────────────────
 // The pipeline stamps each verify span/log/chat with the reviewer's name key
 // (품질/보안/통합/빌드). Two codex reviewers share an engine, so identity — not
-// engine — decides the seat. Legacy rows (engine-only: codex/claude/system)
-// fall back to the old attempt-rotation so history still renders.
-const VERIFY_SEAT: Record<string, string> = {
-  "품질": "juho",
-  "보안": "donghwan",
-  "통합": "yujun",
-  "빌드": "seongho",
-  tests: "seongho",
-};
+// engine — decides the seat. The mapping is roster.ts의 REVIEWER_AGENT_ID —
+// 좌석이 바뀌면 거기 한 곳만 고친다. Legacy rows (engine-only: codex/claude/
+// system) fall back to the old attempt-rotation so history still renders.
+const VERIFY_SEAT: Record<string, string> = REVIEWER_AGENT_ID;
 
 function verifyAgent(key: string | null | undefined, pick: number): Agent {
   const k = (key ?? "").trim();

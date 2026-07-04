@@ -1,5 +1,5 @@
 import { CHAT_PAGE, LOG_PAGE, STEP_PREVIEW } from "../../lib/api";
-import { orchJson } from "../../lib/orch";
+import { orchJson } from "../../lib/server/orch";
 import type { Run, RunDetail } from "../../lib/types";
 import { Workspace } from "./_components/Workspace";
 

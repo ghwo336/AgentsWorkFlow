@@ -1,5 +1,5 @@
 import { HomeClient } from "./_components/HomeClient";
-import { orchJson } from "./lib/orch";
+import { orchJson } from "./lib/server/orch";
 import type { ProjectSummary } from "./lib/types";
 
 export const dynamic = "force-dynamic";

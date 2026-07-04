@@ -14,7 +14,7 @@ export function useOrchestratorEvents(onEvent: (m: MessageEvent) => void) {
   useEffect(() => {
     let es: EventSource | null = null;
     const open = () => {
-      es = new EventSource("/api/orchestrator/events");
+      es = new EventSource("/api/orch/events");
       es.onmessage = onEvent;
     };
     if (document.readyState === "complete") open();

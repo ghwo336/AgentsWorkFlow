@@ -1,4 +1,4 @@
-import { ORCH_URL, orchHeaders } from "../../../lib/orch";
+import { ORCH_URL, orchHeaders } from "../../../lib/server/orch";
 
 export const dynamic = "force-dynamic";
 

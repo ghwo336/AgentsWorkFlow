@@ -1,3 +1,7 @@
+// 이 모듈은 ORCH_TOKEN(공유 시크릿)을 다룬다 — 클라이언트 번들에 섞이면 토큰이
+// 브라우저로 새므로, "use client" 파일이 import하는 순간 빌드가 실패하게 막는다.
+import "server-only";
+
 // The orchestrator owns the SQLite DB (host process). The dashboard reaches it
 // over HTTP instead of opening the DB file itself — see http-data.ts on the
 // orchestrator for why (bind-mount torn reads). Same base URL the approve/chat

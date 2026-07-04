@@ -1,4 +1,4 @@
-import { orchJson } from "../lib/orch";
+import { orchJson } from "../lib/server/orch";
 
 export const dynamic = "force-dynamic";
 

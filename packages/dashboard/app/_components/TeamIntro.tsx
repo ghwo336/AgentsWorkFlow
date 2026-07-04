@@ -12,6 +12,7 @@ import {
   type Role,
 } from "../lib/agents";
 import { api, type LearningProposal } from "../lib/api";
+import { errMsg } from "../lib/err";
 import { Markdown } from "../lib/Markdown";
 
 // 팀 소개 — the home page's "우리 팀" tab. Everyone from the CAST as clickable
@@ -50,7 +51,7 @@ export function TeamIntro() {
     api
       .agentHarnesses()
       .then(setHarnesses)
-      .catch((err) => setLoadError(err instanceof Error ? err.message : "하네스 로드 실패"));
+      .catch((err) => setLoadError(errMsg(err, "하네스 로드 실패")));
     api.agentLearned().then(setLearned).catch(() => {}); // 학습 노트 없음 = 빈 표시
     api.learningProposals().then(setProposals).catch(() => {});
   }, []);

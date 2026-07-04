@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { agentForEvent, PixelAvatar, ROLE_COLOR } from "../../../lib/agents";
 import { api, LOG_PAGE } from "../../../lib/api";
-import { usePagedRows } from "../../../lib/usePagedRows";
+import { usePagedRows } from "../../../lib/hooks/usePagedRows";
 import type { RunEvent } from "../../../lib/types";
 
 // Live timeline. Collapsed by default (raw firehose — only opened when needed);

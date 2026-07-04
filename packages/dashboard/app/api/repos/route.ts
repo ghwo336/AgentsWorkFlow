@@ -3,9 +3,11 @@ import { join } from "node:path";
 
 export const dynamic = "force-dynamic";
 
-// Roots to scan for git repos, ":"-separated. Defaults to the user's srv tree.
+// Roots to scan for git repos, ","-separated — the SAME env var/구분자 the
+// orchestrator's allowedTargetRoots uses (config.ts), so every repo the picker
+// shows stays a valid targetDir.
 const ROOTS = (process.env.REPO_SCAN_ROOTS ?? "/Users/Shared/srv")
-  .split(":")
+  .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
 

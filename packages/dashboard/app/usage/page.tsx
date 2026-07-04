@@ -1,5 +1,5 @@
 import { agentById, PixelAvatar, ROLE_COLOR, type Agent } from "../lib/agents";
-import { orchJson } from "../lib/orch";
+import { orchJson } from "../lib/server/orch";
 import { isPriced } from "@agent-loop/shared/pricing";
 
 type UsageRow = {

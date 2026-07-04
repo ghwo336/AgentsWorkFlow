@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { agentForChat, PixelAvatar, ROLE_COLOR } from "../../../lib/agents";
 import { api, CHAT_PAGE } from "../../../lib/api";
 import { Markdown } from "../../../lib/Markdown";
-import { usePagedRows } from "../../../lib/usePagedRows";
+import { usePagedRows } from "../../../lib/hooks/usePagedRows";
 import type { ChatMsg } from "../../../lib/types";
 
 // What each turn is, as a short tag next to the speaker.

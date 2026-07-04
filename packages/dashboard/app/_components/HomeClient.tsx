@@ -3,7 +3,9 @@
 import { useCallback, useState } from "react";
 import { RESEARCH_PROJECT } from "../lib/agents";
 import { api } from "../lib/api";
-import { useOrchestratorEvents } from "../lib/useOrchestratorEvents";
+import { errMsg } from "../lib/err";
+import { useLoad } from "../lib/hooks/useLoad";
+import { useOrchestratorEvents } from "../lib/hooks/useOrchestratorEvents";
 import type { ProjectSummary } from "../lib/types";
 import { ResearchTab } from "./ResearchTab";
 import { TeamIntro } from "./TeamIntro";
@@ -18,33 +20,31 @@ const visibleProjects = (rows: ProjectSummary[]) => rows.filter((p) => p.name !=
 // (page.tsx) inside the HTML; SSE events refresh it live afterward.
 export function HomeClient({ initialProjects }: { initialProjects: ProjectSummary[] }) {
   const [tab, setTab] = useState<HomeTab>("projects");
-  const [projects, setProjects] = useState<ProjectSummary[]>(visibleProjects(initialProjects));
   const [newName, setNewName] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  // SSE 이벤트 카운터 — 리서치 탭이 목록/보고서를 다시 읽는 신호로 쓴다.
+  const [createError, setCreateError] = useState<string | null>(null);
+  // SSE 이벤트 카운터 — 프로젝트 목록과 리서치 탭이 다시 읽는 신호로 쓴다.
   const [refreshKey, setRefreshKey] = useState(0);
 
-  const load = useCallback(async () => {
-    try {
-      setProjects(visibleProjects(await api.listProjects()));
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "프로젝트 목록 로드 실패");
-    }
-  }, []);
+  const { data, error } = useLoad(() => api.listProjects().then(visibleProjects), [refreshKey], {
+    initial: visibleProjects(initialProjects),
+    errorLabel: "프로젝트 목록 로드 실패",
+  });
+  const projects = data ?? [];
 
   // Live status refresh: any orchestrator event may change a project's state.
-  const onEvent = useCallback(() => {
-    load();
-    setRefreshKey((n) => n + 1);
-  }, [load]);
-  useOrchestratorEvents(onEvent);
+  useOrchestratorEvents(useCallback(() => setRefreshKey((n) => n + 1), []));
 
   async function create(e: React.FormEvent) {
     e.preventDefault();
     const name = newName.trim();
     if (!name) return;
-    await api.createProject(name).catch(() => {});
+    try {
+      await api.createProject(name);
+    } catch (err) {
+      // 생성이 실패했는데 워크스페이스로 이동하면 빈 화면에서 원인을 알 수 없다.
+      setCreateError(errMsg(err, "프로젝트 생성 실패"));
+      return;
+    }
     setNewName("");
     // Jump straight into the new project's workspace.
     window.location.href = `/projects/${encodeURIComponent(name)}`;
@@ -94,6 +94,11 @@ export function HomeClient({ initialProjects }: { initialProjects: ProjectSummar
             만들기 →
           </button>
         </div>
+        {createError && (
+          <div className="small" style={{ color: "var(--red)", marginTop: 8 }}>
+            {createError}
+          </div>
+        )}
       </form>
 
       <div className="panel">

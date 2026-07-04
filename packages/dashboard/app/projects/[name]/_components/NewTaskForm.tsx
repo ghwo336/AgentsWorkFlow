@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../../lib/api";
+import { errMsg } from "../../../lib/err";
 import { ALL_SEAT_KEYS, validateAgents } from "../../../lib/agents";
 import { Markdown } from "../../../lib/Markdown";
 import { TeamPicker, type TeamMode } from "./TeamPicker";
@@ -71,7 +72,7 @@ export function NewTaskForm({
       setMessages([...next, { role: "assistant", content: reply || "(응답이 비어 있습니다)" }]);
     } catch (err) {
       // Keep the user's message; let them retry. Surface the reason inline.
-      setChatError(err instanceof Error ? err.message : "대화 요청 실패");
+      setChatError(errMsg(err, "대화 요청 실패"));
     } finally {
       setSending(false);
     }

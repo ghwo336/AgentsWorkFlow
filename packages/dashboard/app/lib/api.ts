@@ -62,35 +62,35 @@ const postJson = <T>(url: string, body: unknown, errLabel: string) =>
   sendJson<T>("POST", url, body, errLabel);
 
 export const api = {
-  listProjects: () => getJson<ProjectSummary[]>("/api/projects", "프로젝트 목록 로드 실패"),
+  listProjects: () => getJson<ProjectSummary[]>("/api/orch/data/projects", "프로젝트 목록 로드 실패"),
 
   createProject: (name: string) =>
-    postJson<{ name: string }>("/api/projects", { name }, "프로젝트 생성 실패"),
+    postJson<{ name: string }>("/api/orch/data/projects", { name }, "프로젝트 생성 실패"),
 
   getProject: (name: string) =>
-    getJson<Project>(`/api/projects/${encodeURIComponent(name)}`, "프로젝트 정보 로드 실패"),
+    getJson<Project>(`/api/orch/data/projects/${encodeURIComponent(name)}`, "프로젝트 정보 로드 실패"),
 
   listRepos: () => getJson<string[]>("/api/repos", "저장소 목록 로드 실패"),
 
   // 팀 소개 모달용 — agentId → 하네스 md (agents-config/*.md 원문).
   agentHarnesses: () =>
-    getJson<Record<string, string>>("/api/orchestrator/agents/harnesses", "하네스 로드 실패"),
+    getJson<Record<string, string>>("/api/orch/data/agents/harnesses", "하네스 로드 실패"),
 
   // 팀 학습 노트 (agents-config/learned/) — 프로젝트명/agentId → md 원문.
   agentLearned: () =>
     getJson<{ projects: Record<string, string>; agents: Record<string, string> }>(
-      "/api/orchestrator/agents/learned",
+      "/api/orch/data/agents/learned",
       "학습 노트 로드 실패"
     ),
 
   // 제안함: 승인 대기 중인 에이전트 교훈.
   learningProposals: () =>
-    getJson<LearningProposal[]>("/api/orchestrator/learning/proposals", "제안함 로드 실패"),
+    getJson<LearningProposal[]>("/api/orch/data/learning/proposals", "제안함 로드 실패"),
 
   // 제안 승인/거절 — 승인하면 그 팀원의 학습 파일에 편입돼 프롬프트에 주입된다.
   resolveProposal: (id: string, action: "approve" | "reject") =>
     postJson<unknown>(
-      `/api/orchestrator/learning/proposals/${encodeURIComponent(id)}`,
+      `/api/orch/data/learning/proposals/${encodeURIComponent(id)}`,
       { action },
       "제안 결정 실패"
     ),
@@ -98,54 +98,54 @@ export const api = {
   setProjectDir: (name: string, defaultTargetDir: string) =>
     sendJson<Project>(
       "PATCH",
-      `/api/projects/${encodeURIComponent(name)}`,
+      `/api/orch/data/projects/${encodeURIComponent(name)}`,
       { defaultTargetDir },
       "기본 저장소 저장 실패"
     ),
 
   listRuns: (project: string) =>
-    getJson<Run[]>(`/api/runs?project=${encodeURIComponent(project)}`, "작업 목록 로드 실패"),
+    getJson<Run[]>(`/api/orch/data/runs?project=${encodeURIComponent(project)}`, "작업 목록 로드 실패"),
 
   // 라이브 뷰용 상세 — SSE 이벤트마다 다시 받으므로 최신 로그/대화만 가져온다
   // (verdicts=0: diff가 실려 무겁고 라이브 뷰에선 안 쓴다). 과거분은 아래
   // olderRunEvents/olderRunChat으로 "더보기" 페이징.
   getRun: (id: string) =>
     getJson<RunDetail>(
-      `/api/runs/${id}?eventsTake=${LOG_PAGE}&chatTake=${CHAT_PAGE}&verdicts=0&stepSummaryMax=${STEP_PREVIEW}`,
+      `/api/orch/data/runs/${id}?eventsTake=${LOG_PAGE}&chatTake=${CHAT_PAGE}&verdicts=0&stepSummaryMax=${STEP_PREVIEW}`,
       "작업 상세 로드 실패"
     ),
 
   // 잘려 온 step summary의 전문 — 작업 요약에서 더보기를 눌렀을 때만.
-  getStep: (id: string) => getJson<Step>(`/api/steps/${id}`, "작업 내용 로드 실패"),
+  getStep: (id: string) => getJson<Step>(`/api/orch/data/steps/${id}`, "작업 내용 로드 실패"),
 
   // 리서치 스레드용 상세 — 대화(질문/보고서)가 본체라 chat을 넉넉히 가져온다.
   getResearchRun: (id: string) =>
     getJson<RunDetail>(
-      `/api/runs/${id}?eventsTake=${LOG_PAGE}&chatTake=100&verdicts=0`,
+      `/api/orch/data/runs/${id}?eventsTake=${LOG_PAGE}&chatTake=100&verdicts=0`,
       "리서치 상세 로드 실패"
     ),
 
   // 리서치 폴더 — 사용자가 만든 그룹(예: "블록체인")으로 리서치들을 묶는다.
   listResearchFolders: () =>
-    getJson<ResearchFolder[]>("/api/research-folders", "리서치 폴더 로드 실패"),
+    getJson<ResearchFolder[]>("/api/orch/data/research-folders", "리서치 폴더 로드 실패"),
 
   createResearchFolder: (name: string) =>
-    postJson<ResearchFolder>("/api/research-folders", { name }, "폴더 생성 실패"),
+    postJson<ResearchFolder>("/api/orch/data/research-folders", { name }, "폴더 생성 실패"),
 
   // 폴더 삭제 — 안의 리서치들은 지워지지 않고 미분류로 돌아간다.
   deleteResearchFolder: async (id: string) => {
-    const r = await fetch(`/api/research-folders/${encodeURIComponent(id)}`, { method: "DELETE" });
+    const r = await fetch(`/api/orch/data/research-folders/${encodeURIComponent(id)}`, { method: "DELETE" });
     if (!r.ok) throw new Error(`폴더 삭제 실패 (${r.status})`);
   },
 
   // 리서치를 폴더로 이동 (folderId: null = 미분류로 꺼내기).
   setRunFolder: (id: string, folderId: string | null) =>
-    sendJson<Run>("PATCH", `/api/runs/${id}/folder`, { folderId }, "폴더 이동 실패"),
+    sendJson<Run>("PATCH", `/api/orch/data/runs/${id}/folder`, { folderId }, "폴더 이동 실패"),
 
   // 리서치 후속 질문 — reported 상태의 run에 대화를 이어 붙인다.
   researchFollowUp: (id: string, question: string) =>
     postJson<unknown>(
-      `/api/orchestrator/runs/${id}/research-followup`,
+      `/api/orch/runs/${id}/research-followup`,
       { question },
       "후속 질문 전송 실패"
     ),
@@ -154,7 +154,7 @@ export const api = {
   // null = 아직 run이 없는 프로젝트 (에러 아님).
   getLatestRun: async (project: string): Promise<RunDetail | null> => {
     const r = await fetch(
-      `/api/runs/latest?project=${encodeURIComponent(project)}&eventsTake=${LOG_PAGE}&chatTake=${CHAT_PAGE}&verdicts=0&stepSummaryMax=${STEP_PREVIEW}`,
+      `/api/orch/data/runs/latest?project=${encodeURIComponent(project)}&eventsTake=${LOG_PAGE}&chatTake=${CHAT_PAGE}&verdicts=0&stepSummaryMax=${STEP_PREVIEW}`,
       { cache: "no-store" }
     );
     if (r.status === 404) return null;
@@ -164,37 +164,37 @@ export const api = {
 
   olderRunEvents: (id: string, before: string) =>
     getJson<RunEvent[]>(
-      `/api/runs/${id}/events?before=${encodeURIComponent(before)}&take=${LOG_PAGE}`,
+      `/api/orch/data/runs/${id}/events?before=${encodeURIComponent(before)}&take=${LOG_PAGE}`,
       "이전 로그 로드 실패"
     ),
 
   olderRunChat: (id: string, before: string) =>
     getJson<ChatMsg[]>(
-      `/api/runs/${id}/chat?before=${encodeURIComponent(before)}&take=${CHAT_PAGE}`,
+      `/api/orch/data/runs/${id}/chat?before=${encodeURIComponent(before)}&take=${CHAT_PAGE}`,
       "이전 대화 로드 실패"
     ),
 
   // Pre-plan requirements chat: send the whole thread, get Opus's next reply.
   chat: (messages: ChatMessage[]) =>
-    postJson<{ reply: string }>("/api/orchestrator/chat", { messages }, "대화 요청 실패"),
+    postJson<{ reply: string }>("/api/orch/chat", { messages }, "대화 요청 실패"),
 
   startRun: (input: StartRunInput & { project: string }) =>
-    postJson<{ id: string }>("/api/orchestrator/runs", input, "orchestrator 작업 시작 실패"),
+    postJson<{ id: string }>("/api/orch/runs", input, "orchestrator 작업 시작 실패"),
 
   approve: (id: string, editedPlan?: string) =>
     postJson<unknown>(
-      `/api/orchestrator/runs/${id}/approve`,
+      `/api/orch/runs/${id}/approve`,
       { action: "approve", editedPlan },
       "승인 요청 실패"
     ),
 
   reject: (id: string) =>
-    postJson<unknown>(`/api/orchestrator/runs/${id}/approve`, { action: "reject" }, "거절 요청 실패"),
+    postJson<unknown>(`/api/orch/runs/${id}/approve`, { action: "reject" }, "거절 요청 실패"),
 
   // Send feedback so the planner (Opus) revises the plan — an interactive loop.
   revise: (id: string, feedback: string) =>
     postJson<unknown>(
-      `/api/orchestrator/runs/${id}/approve`,
+      `/api/orch/runs/${id}/approve`,
       { action: "revise", feedback },
       "수정 요청 실패"
     ),
@@ -202,17 +202,17 @@ export const api = {
   // Resolve a run stuck at needs_input: guide (fix instructions) / commit (accept
   // as-is) / skip (drop this step) / abort (stop the run).
   resume: (id: string, decision: InterventionDecision) =>
-    postJson<unknown>(`/api/orchestrator/runs/${id}/resume`, decision, "재개 요청 실패"),
+    postJson<unknown>(`/api/orch/runs/${id}/resume`, decision, "재개 요청 실패"),
 
   // Re-run a stopped run (rejected/failed/needs_input) from where it left off.
   retry: (id: string) =>
-    postJson<unknown>(`/api/orchestrator/runs/${id}/retry`, {}, "다시 진행 요청 실패"),
+    postJson<unknown>(`/api/orch/runs/${id}/retry`, {}, "다시 진행 요청 실패"),
 
   // Discuss a stuck (needs_input) run with 호재(Opus) before deciding. Stateless:
   // send the whole thread, get 호재's next reply (seeded with the stuck context).
   interveneChat: (id: string, messages: ChatMessage[]) =>
     postJson<{ reply: string }>(
-      `/api/orchestrator/runs/${id}/intervene-chat`,
+      `/api/orch/runs/${id}/intervene-chat`,
       { messages },
       "호재와 대화 요청 실패"
     ),

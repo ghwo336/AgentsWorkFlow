@@ -1,7 +1,7 @@
 "use client";
 
 import { Markdown } from "../../../lib/Markdown";
-import { useBusyAction } from "../../../lib/useBusyAction";
+import { useBusyAction } from "../../../lib/hooks/useBusyAction";
 
 // Shown when a run has stopped (rejected/failed). Lets the user re-open it and
 // continue from where it left off — the build resumes at the first uncommitted

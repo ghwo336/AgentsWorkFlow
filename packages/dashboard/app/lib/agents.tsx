@@ -222,31 +222,6 @@ export function WallClock({ s = 20 }: { s?: number }) {
   );
 }
 
-// A desk with a monitor (screen tinted to the person's role color), keyboard
-// and coffee mug — the character sits behind it.
-export function Workstation({ screen = "#5b9dff", w = 60 }: { screen?: string; w?: number }) {
-  return (
-    <svg width={w} height={(w * 12) / 24} viewBox="0 0 24 12" shapeRendering="crispEdges" style={{ display: "block" }}>
-      {/* monitor */}
-      {pxRect(6, 0, 12, 6, "#2b2f40")}
-      {pxRect(7, 1, 10, 4, screen)}
-      {pxRect(8, 2, 6, 1, "#ffffff", 0.75)}
-      {pxRect(8, 3, 4, 1, "#ffffff", 0.5)}
-      {pxRect(11, 6, 2, 1, "#2b2f40")}
-      {/* coffee mug */}
-      {pxRect(2, 3, 3, 3, "#d98b5b")}
-      {pxRect(5, 4, 1, 1, "#d98b5b")}
-      {pxRect(2, 2, 3, 1, "#eaf4ff", 0.6)}
-      {/* desk top + front */}
-      {pxRect(0, 7, 24, 2, "#7d6a52")}
-      {pxRect(0, 7, 24, 1, "#8f7a5f")}
-      {pxRect(0, 9, 24, 3, "#574837")}
-      {/* keyboard */}
-      {pxRect(9, 6, 6, 1, "#3a3f52")}
-    </svg>
-  );
-}
-
 // A desk with the character's own OPEN LAPTOP (MacBook / Galaxy Book, in their
 // color) instead of a generic monitor — viewed from behind the lid so the brand
 // logo faces us. Used in the office roster.
@@ -320,18 +295,6 @@ export function LogoMark({ size = 26 }: { size?: number }) {
       {pxRect(4, 14, 3, 2, "#2b4f8f")}
       {pxRect(9, 14, 3, 2, "#2b4f8f")}
     </svg>
-  );
-}
-
-// ── Reusable bits ───────────────────────────────────────────────────────────
-export function AgentChip({ agent, size = 26 }: { agent: Agent; size?: number }) {
-  return (
-    <span className="agent-chip" title={`${agent.name} · ${agent.roleLabel} (${agent.engineLabel})`}>
-      <PixelAvatar agent={agent} size={size} />
-      <span className="agent-chip-name" style={{ color: ROLE_COLOR[agent.role] }}>
-        {agent.name}
-      </span>
-    </span>
   );
 }
 

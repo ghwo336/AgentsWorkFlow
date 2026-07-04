@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Markdown } from "../../../lib/Markdown";
-import { useBusyAction } from "../../../lib/useBusyAction";
+import { useBusyAction } from "../../../lib/hooks/useBusyAction";
 
 // Approval gate UI. Owns the editable plan text (re-seeded whenever a new plan
 // arrives) and a feedback box that sends the plan back to Opus for revision —

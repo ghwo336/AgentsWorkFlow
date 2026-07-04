@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { agentById, PixelAvatar, ROLE_COLOR } from "../../../lib/agents";
+import { errMsg } from "../../../lib/err";
 import { Markdown } from "../../../lib/Markdown";
-import { useBusyAction } from "../../../lib/useBusyAction";
+import { useBusyAction } from "../../../lib/hooks/useBusyAction";
 import type { ChatMessage } from "../../../lib/types";
 
 // Intervention gate: shown when a step is stuck (needs_input) — after the
@@ -50,7 +51,7 @@ export function InterventionPanel({
       const reply = await onChat(next);
       setMessages([...next, { role: "assistant", content: reply || "(응답이 비어 있습니다)" }]);
     } catch (err) {
-      setChatErr(err instanceof Error ? err.message : "호재와 대화 실패");
+      setChatErr(errMsg(err, "호재와 대화 실패"));
     } finally {
       setSending(false);
     }
