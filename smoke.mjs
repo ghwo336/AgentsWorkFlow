@@ -13,7 +13,8 @@ const start = await fetch(`${ORCH}/runs`, {
     title: "smoke: hello file",
     brief:
       "Create a file named hello.txt whose contents are exactly the single line: Hello from agent-loop",
-    targetDir: "/Users/Shared/srv/agent-loop/workspaces/smoke-" + process.pid,
+    // 레포 밖 형제 워크스페이스 아래로 — 스모크 산출물이 레포를 오염시키지 않게.
+    targetDir: "/Users/Shared/srv/agent-workspaces/smoke-" + process.pid,
   }),
 });
 const { id } = await start.json();
