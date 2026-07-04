@@ -266,12 +266,20 @@ export async function resolveInput(
 // run이나 실패한 run에서만. 조사 중(researching)에는 409. 이전 스레드를 맥락
 // 삼아 같은 run에 새 보고서를 이어 붙인다.
 const FOLLOWUP_OK = new Set(["reported", "committed", "failed"]);
-export async function followUpResearch(runId: string, question: string): Promise<boolean> {
+export async function followUpResearch(
+  runId: string,
+  question: string,
+  agents?: string[]
+): Promise<boolean> {
   const st = await store.getResumeState(runId);
   if (!st || !st.targetDir) return false;
-  const roster = rosterOf(st.agents);
-  if (runModeOf(roster) !== "research") return false;
+  const baseRoster = rosterOf(st.agents);
+  if (runModeOf(baseRoster) !== "research") return false;
   if (!FOLLOWUP_OK.has(st.status)) return false;
+  // 이 질문만 다른 리서처 조합으로 물을 수 있다 — 넘어온 seat이 리서처들로만
+  // 이뤄졌을 때만 채택하고, 아니면 run의 원래 로스터로 답한다 (방어적).
+  const override = agents ? rosterOf(agents) : null;
+  const roster = override && runModeOf(override) === "research" ? override : baseRoster;
   const reporter = new DbRunReporter(runId);
   pipeline.researchFollowUp(runId, question, st.targetDir, reporter, roster).catch(onFatal(reporter));
   return true;

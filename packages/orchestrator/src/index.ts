@@ -151,14 +151,18 @@ app.post("/runs/:id/intervene-chat", async (req, reply) => {
 });
 
 // 리서치 후속 질문 — reported 상태의 리서치 run에 대화를 이어 붙인다.
-const FollowUpSchema = z.object({ question: z.string().min(1) });
+// agents(seat 키)를 주면 이 질문만 그 리서처들에게 묻는다 (생략 시 run 로스터).
+const FollowUpSchema = z.object({
+  question: z.string().min(1),
+  agents: z.array(z.string()).nonempty().optional(),
+});
 app.post("/runs/:id/research-followup", async (req, reply) => {
   const { id } = req.params as { id: string };
   const parsed = FollowUpSchema.safeParse(req.body);
   if (!parsed.success) {
     return reply.code(400).send({ error: parsed.error.flatten() });
   }
-  const ok = await followUpResearch(id, parsed.data.question);
+  const ok = await followUpResearch(id, parsed.data.question, parsed.data.agents);
   if (!ok) {
     return reply.code(409).send({ error: "후속 질문을 받을 수 있는 리서치 run이 아닙니다." });
   }

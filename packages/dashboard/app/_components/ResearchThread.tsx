@@ -8,6 +8,7 @@ import { Markdown } from "../lib/Markdown";
 import { isRunning, statusLabel, WEB_RESEARCHER, X_RESEARCHER } from "../lib/research";
 import { useLoad } from "../lib/hooks/useLoad";
 import type { ResearchFolder } from "../lib/types";
+import { RESEARCHERS, ResearcherPicker, toSeats } from "./ResearcherPicker";
 
 // 리서치 스레드 하나 — 대화(질문↔보고서) + 후속 질문 입력 + 폴더 이동.
 // 첫 말풍선은 run.brief(최초 질문), 이후는 팀 채팅의 user/research 턴.
@@ -31,6 +32,8 @@ export function ResearchThread({
   const [sending, setSending] = useState(false);
   const [moving, setMoving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 이 후속 질문을 누구에게 물을지 — 기본 둘 다, 매번 바꿀 수 있다.
+  const [picked, setPicked] = useState<string[]>([...RESEARCHERS]);
 
   if (!detail) return <div className="panel muted small">스레드 불러오는 중…</div>;
 
@@ -44,10 +47,10 @@ export function ResearchThread({
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     const q = question.trim();
-    if (!q || sending || running) return;
+    if (!q || sending || running || picked.length === 0) return;
     setSending(true);
     try {
-      await api.researchFollowUp(id, q);
+      await api.researchFollowUp(id, q, toSeats(picked));
       setQuestion("");
       setError(null);
       await reload();
@@ -146,11 +149,14 @@ export function ResearchThread({
 
       {!running && (
         <form onSubmit={submit} style={{ marginTop: 12 }}>
+          {/* 이 후속 질문을 누구에게 물을지 — 매 질문마다 고를 수 있다. */}
+          <ResearcherPicker picked={picked} onChange={setPicked} size={22} />
+          <div style={{ height: 8 }} />
           <textarea
             placeholder={
               detail.status === "failed"
                 ? "조사가 실패했어요 — 질문을 다시 보내면 이어서 시도해요."
-                : "후속 질문을 이어서 물어보세요 — 상현·예림이 위 대화를 기억한 채로 답해요."
+                : "후속 질문을 이어서 물어보세요 — 위 대화를 기억한 채로 답해요."
             }
             value={question}
             onChange={(e) => setQuestion(e.target.value)}

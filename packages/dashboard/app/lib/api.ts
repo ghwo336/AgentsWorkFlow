@@ -151,10 +151,11 @@ export const api = {
     sendJson<Run>("PATCH", `/api/orch/data/runs/${id}/folder`, { folderId }, "폴더 이동 실패"),
 
   // 리서치 후속 질문 — reported 상태의 run에 대화를 이어 붙인다.
-  researchFollowUp: (id: string, question: string) =>
+  // agents(seat 키)를 주면 이 질문만 그 리서처들에게 묻는다 (생략 시 run 로스터).
+  researchFollowUp: (id: string, question: string, agents?: string[]) =>
     postJson<unknown>(
       `/api/orch/runs/${id}/research-followup`,
-      { question },
+      { question, ...(agents?.length ? { agents } : {}) },
       "후속 질문 전송 실패"
     ),
 
