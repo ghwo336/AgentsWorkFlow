@@ -14,6 +14,7 @@ import {
 import { api, type LearningProposal } from "../lib/api";
 import { errMsg } from "../lib/err";
 import { Markdown } from "../lib/Markdown";
+import { PROPOSALS_CHANGED } from "./NavLinks";
 
 // 팀 소개 — the home page's "우리 팀" tab. Everyone from the CAST as clickable
 // cards (grouped 기획/개발/검증); clicking opens a modal with that teammate's
@@ -136,6 +137,8 @@ function ProposalInbox({
     try {
       await api.resolveProposal(id, action);
       onResolved();
+      // 네비의 팀 배지도 즉시 다시 세게 — 서로 다른 트리라 이벤트로 알린다.
+      window.dispatchEvent(new Event(PROPOSALS_CHANGED));
     } finally {
       setBusyId(null);
     }
