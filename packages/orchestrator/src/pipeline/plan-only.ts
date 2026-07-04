@@ -17,9 +17,11 @@ export async function planOnly(
   const project = (await deps.store.getProject(runId)) ?? "default";
   const learned =
     [loadProjectLessons(project), loadAgentLessons("hojae")].filter(Boolean).join("\n") || undefined;
-  const planned = await planOnce(deps, brief, targetDir, reporter, order, { learned });
+  const lineage = (await deps.store.getLineageFor(runId)) ?? undefined;
+  const planned = await planOnce(deps, brief, targetDir, reporter, order, { learned, lineage });
   if (planned === null) return; // planOnce already marked the run failed
-  await deps.store.saveSteps(runId, planned.steps);
+  await deps.store.saveSteps(runId, planned.steps, undefined, planned.commits);
+  await deps.store.savePlanRevision(runId, planned.text, { kind: "initial" });
   await reporter.status("committed", { plan: planned.text });
   await reporter.log("plan", "기획 전용 작업 — 계획서 작성을 완료했습니다 ✅ (구현 없이 종료)");
 }

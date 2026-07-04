@@ -20,6 +20,34 @@ describe("parsePlanOutput", () => {
     );
     assert.deepEqual(r.steps, ["UI", "API"]);
     assert.deepEqual(r.devs, ["taekyung", "minjae"]);
+    assert.deepEqual(r.commits, [null, null]);
+  });
+
+  it("commit 필드 — conventional 제목은 통과, 형식 위반은 null", () => {
+    const r = parsePlanOutput(
+      "본문\n```steps\n" +
+        JSON.stringify([
+          { desc: "스키마", commit: "feat: X 모델 추가" },
+          { desc: "버그", commit: "fix(api): 400 응답 수정" },
+          { desc: "형식 위반", commit: "그냥 문장" },
+          { desc: "타입 오타", commit: "feature: 이상한 타입" },
+          { desc: "누락" },
+        ]) +
+        "\n```"
+    );
+    assert.deepEqual(r.commits, ["feat: X 모델 추가", "fix(api): 400 응답 수정", null, null, null]);
+  });
+
+  it("commit 제목이 여러 줄이면 첫 줄만, 과도하게 길면 null", () => {
+    const r = parsePlanOutput(
+      "본문\n```steps\n" +
+        JSON.stringify([
+          { desc: "A", commit: "feat: 요약\n\n본문까지 써버린 경우" },
+          { desc: "B", commit: `refactor: ${"길".repeat(100)}` },
+        ]) +
+        "\n```"
+    );
+    assert.deepEqual(r.commits, ["feat: 요약", null]);
   });
 
   it("dev가 unknown/검증자 좌석이면 null (순환 배정 폴백)", () => {

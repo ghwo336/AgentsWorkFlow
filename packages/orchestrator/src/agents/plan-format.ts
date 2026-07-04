@@ -8,12 +8,22 @@ import { devAgentIdOf, seatsOf } from "@agent-loop/shared/roster";
 
 // ── Prompt side ──────────────────────────────────────────────────────────────
 
-// The base step-list spec (string items). Appended to the planner's system
-// prompt; assignSystem() upgrades items to {"desc","dev"} objects when the run
-// has developers to assign.
+// 커밋 제목 규칙 — 기본/배정 두 프롬프트 변형이 공유한다. 각 단계는 검증
+// 통과 시 그대로 git commit되므로, 제목은 플래너가 의도를 아는 시점에 정한다.
+const COMMIT_RULE = `Each step also carries "commit": the conventional-commit subject line used
+verbatim when that step's diff is committed. Format: "type: 요약" where type ∈
+feat|fix|docs|style|refactor|perf|test|chore|build|ci and 요약 is a concise
+Korean summary of THAT step's change (≤50 chars, no trailing period,
+code/identifiers stay as-is). Pick the type by the step's nature (새 기능=feat,
+버그 수정=fix, 구조 정리=refactor, 문서=docs …).`;
+
+// The base step-list spec. Appended to the planner's system prompt;
+// assignSystem() upgrades items to {"desc","dev","commit"} objects when the
+// run has developers to assign.
 export const STEPS_SYSTEM = `
 At the VERY END of your message, append a machine-readable step list: a fenced
-\`\`\`steps block containing a JSON array. Each entry is ONE self-contained
+\`\`\`steps block containing a JSON array. Each entry is an OBJECT
+{"desc": "<단계 설명>", "commit": "<커밋 제목>"} — ONE self-contained
 implementation step that a builder agent can execute and a reviewer can verify
 on its own. Split the work into meaningful units (NOT one file per step) — aim
 for 3–8 ordered steps, each building on the previous.
@@ -22,10 +32,13 @@ modules at once (e.g. "구현 all API endpoints"), split it — oversized steps 
 review feedback loop endlessly. Also write each step's ACCEPTANCE clearly enough
 in the description that a reviewer can judge pass/fail without guessing extras.
 Write each step description in Korean (code/paths/identifiers stay as-is).
+${COMMIT_RULE}
 Example:
 
 \`\`\`steps
-["Prisma 스키마에 X 모델 추가 후 마이그레이션", "API 라우트 /api/x 구현", "대시보드 UI 연결"]
+[{"desc": "Prisma 스키마에 X 모델 추가 후 마이그레이션", "commit": "feat: X 모델 스키마 추가"},
+ {"desc": "API 라우트 /api/x 구현", "commit": "feat: /api/x 라우트 구현"},
+ {"desc": "대시보드 UI 연결", "commit": "feat: 대시보드에 X 화면 연결"}]
 \`\`\``;
 
 // Step-assignment addendum: when the run has specialist developers, each plan
@@ -37,18 +50,18 @@ export function assignSystem(devs: Array<{ key: string; name: string; specialty?
     .join("\n");
   return `
 STEP ASSIGNMENT: each element of the \`\`\`steps array must be an OBJECT
-{"desc": "<단계 설명 (한국어)>", "dev": "<seat key>"} — "dev"는 그 단계를 구현할
-개발자이며 아래 목록에서만 고른다. 각 단계는 스택이 맞는 전문가에게 배정하라
-(예: 화면/UI 단계 → 프론트엔드, API/DB 단계 → 백엔드). 한 단계가 두 스택에
-걸치면 더 비중이 큰 쪽에 배정하고 단계를 나눌 수 있으면 나눠라.
+{"desc": "<단계 설명 (한국어)>", "dev": "<seat key>", "commit": "<커밋 제목>"} —
+"dev"는 그 단계를 구현할 개발자이며 아래 목록에서만 고른다. 각 단계는 스택이
+맞는 전문가에게 배정하라 (예: 화면/UI 단계 → 프론트엔드, API/DB 단계 → 백엔드).
+한 단계가 두 스택에 걸치면 더 비중이 큰 쪽에 배정하고 단계를 나눌 수 있으면 나눠라.
 
 참여 개발자:
 ${list}
 
 Example:
 \`\`\`steps
-[{"desc": "Prisma 스키마에 X 모델 추가", "dev": "build:minjae"},
- {"desc": "대시보드 UI 연결", "dev": "build:taekyung"}]
+[{"desc": "Prisma 스키마에 X 모델 추가", "dev": "build:minjae", "commit": "feat: X 모델 스키마 추가"},
+ {"desc": "대시보드 UI 연결", "dev": "build:taekyung", "commit": "feat: 대시보드에 X 화면 연결"}]
 \`\`\``;
 }
 
@@ -90,7 +103,18 @@ export interface PlanOutput {
   cleanText: string; // plan text with the machine blocks stripped (for approval UI)
   steps: string[];
   devs: (string | null)[]; // per-step assignee person id (null = 미배정)
+  commits: (string | null)[]; // per-step conventional commit subject (null = 미지정)
   team: string[] | null; // recommended seat keys (auto-team runs), or null
+}
+
+// 커밋 제목은 그대로 git 이력이 되므로, 형식이 깨진 값(타입 누락, 본문급
+// 길이)은 버리고 null로 둔다 — 커밋 쪽이 레거시 메시지로 폴백한다.
+const COMMIT_SUBJECT = /^(feat|fix|docs|style|refactor|perf|test|chore|build|ci)(\([^)]+\))?!?: .+/;
+function commitSubjectOf(raw: unknown): string | null {
+  const s = String(raw ?? "")
+    .trim()
+    .split("\n")[0];
+  return s && s.length <= 90 && COMMIT_SUBJECT.test(s) ? s : null;
 }
 
 // Pull the ```team block (JSON array of seat keys) out of the text. Missing or
@@ -111,10 +135,16 @@ function extractTeam(text: string): { team: string[] | null; rest: string } {
   return { team: null, rest };
 }
 
-// Pull the ```steps block: items are plain strings (legacy) or {"desc","dev"}
-// objects. Falls back to a single step (the whole plan) when no valid block is
-// present, which degrades gracefully to a one-shot build.
-function extractSteps(text: string): { steps: string[]; devs: (string | null)[]; rest: string } {
+// Pull the ```steps block: items are plain strings (legacy) or objects
+// {"desc","dev","commit"} (dev/commit optional). Falls back to a single step
+// (the whole plan) when no valid block is present, which degrades gracefully
+// to a one-shot build.
+function extractSteps(text: string): {
+  steps: string[];
+  devs: (string | null)[];
+  commits: (string | null)[];
+  rest: string;
+} {
   const fence = /```steps\s*([\s\S]*?)```/i;
   const m = text.match(fence);
   if (m) {
@@ -126,15 +156,20 @@ function extractSteps(text: string): { steps: string[]; devs: (string | null)[];
             if (s && typeof s === "object" && "desc" in s) {
               const desc = String((s as { desc: unknown }).desc ?? "").trim();
               const devRef = String((s as { dev?: unknown }).dev ?? "");
-              return { desc, dev: devRef ? devAgentIdOf(devRef) : null };
+              return {
+                desc,
+                dev: devRef ? devAgentIdOf(devRef) : null,
+                commit: commitSubjectOf((s as { commit?: unknown }).commit),
+              };
             }
-            return { desc: String(s).trim(), dev: null };
+            return { desc: String(s).trim(), dev: null, commit: null };
           })
           .filter((it) => it.desc);
         if (items.length > 0) {
           return {
             steps: items.map((it) => it.desc),
             devs: items.map((it) => it.dev),
+            commits: items.map((it) => it.commit),
             rest: text.replace(fence, "").trim(),
           };
         }
@@ -143,11 +178,11 @@ function extractSteps(text: string): { steps: string[]; devs: (string | null)[];
       /* malformed block — fall back to a single step */
     }
   }
-  return { steps: [text.trim()], devs: [null], rest: text };
+  return { steps: [text.trim()], devs: [null], commits: [null], rest: text };
 }
 
 export function parsePlanOutput(text: string): PlanOutput {
   const { team, rest: withoutTeam } = extractTeam(text);
-  const { steps, devs, rest: cleanText } = extractSteps(withoutTeam);
-  return { cleanText, steps, devs, team };
+  const { steps, devs, commits, rest: cleanText } = extractSteps(withoutTeam);
+  return { cleanText, steps, devs, commits, team };
 }

@@ -32,6 +32,8 @@ export interface StartInput {
   // OMIT the field entirely for 자동 배치: the run starts with the full team and
   // 호재 staffs the actual team while planning (```team block → Run.agents).
   agents?: string[];
+  // 후속 작업의 부모 run id — 요구사항 스레드 링크 (독립 작업이면 생략).
+  parentRunId?: string;
 }
 
 // ── Composition root ───────────────────────────────────────────────────────
@@ -133,6 +135,7 @@ export async function startRun(input: StartInput): Promise<string> {
     project,
     agents,
     autoTeam,
+    parentRunId: input.parentRunId,
   });
 
   // Where this run works — the path/allowlist policy lives in workspace-path.ts.
@@ -231,7 +234,13 @@ export async function resolveApproval(
   }
 
   // approve — persist any edits, then resume into the build phase from the DB.
-  if (decision.editedPlan?.trim()) await store.savePlan(runId, decision.editedPlan.trim());
+  // 편집 반영은 내용이 실제로 달라졌을 때만 — 패널은 항상 editedPlan을 실어
+  // 보내므로, 무조건 저장하면 승인마다 가짜 "직접 수정" 이력이 쌓인다.
+  const edited = decision.editedPlan?.trim();
+  if (edited && edited !== (st.plan ?? "").trim()) {
+    await store.savePlan(runId, edited);
+    await store.savePlanRevision(runId, edited, { kind: "edit" });
+  }
   await reporter.log("approval", "계획 승인됨. 구현을 시작합니다.");
   await reporter.status("building");
   pipeline.build(runId, reporter).catch(onFatal(reporter));

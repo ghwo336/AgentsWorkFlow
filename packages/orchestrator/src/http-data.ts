@@ -38,6 +38,8 @@ async function runDetail(id: string, q: DetailQuery) {
       chatMsgs: chatTake
         ? { orderBy: [{ ts: "desc" as const }, { id: "desc" as const }], take: chatTake }
         : { orderBy: { ts: "asc" as const } },
+      // 기획 변천사 — 버전 수가 한 자릿수라 전문을 그대로 실어도 가볍다.
+      planRevisions: { orderBy: { version: "asc" as const } },
     },
   });
   if (!run) return null;
@@ -54,9 +56,20 @@ async function runDetail(id: string, q: DetailQuery) {
         summaryLen: s.summary?.length ?? 0,
       }))
     : run.steps;
-  const [eventsTotal, chatTotal] = await Promise.all([
+  // 요구사항 스레드 — 이 run의 부모(이어받은 원작업)와 자식(후속 작업)들.
+  // 목록/링크 렌더에 필요한 최소 컬럼만.
+  const threadSel = { id: true, title: true, status: true, commit: true, createdAt: true } as const;
+  const [eventsTotal, chatTotal, parentRun, childRuns] = await Promise.all([
     eventsTake ? prisma.event.count({ where: { runId: id } }) : run.events.length,
     chatTake ? prisma.chatMsg.count({ where: { runId: id } }) : run.chatMsgs.length,
+    run.parentRunId
+      ? prisma.run.findUnique({ where: { id: run.parentRunId }, select: threadSel })
+      : null,
+    prisma.run.findMany({
+      where: { parentRunId: id },
+      orderBy: { createdAt: "asc" },
+      select: threadSel,
+    }),
   ]);
   return {
     ...run,
@@ -64,6 +77,8 @@ async function runDetail(id: string, q: DetailQuery) {
     verdicts: (run as { verdicts?: unknown[] }).verdicts ?? [],
     eventsTotal,
     chatTotal,
+    parentRun,
+    childRuns,
   };
 }
 
@@ -223,6 +238,36 @@ export function registerDataRoutes(app: FastifyInstance): void {
     if (!name) return reply.code(400).send({ error: "name required" });
     const project = await prisma.project.upsert({ where: { name }, create: { name }, update: {} });
     return reply.code(201).send(project);
+  });
+
+  // 기획 피드 — 프로젝트의 run들을 시간순으로, 기획 스레드(내 요청 → 계획
+  // 버전들 → 결과) 렌더에 필요한 컬럼만. SSE마다 다시 받으므로 revision 전문
+  // (계획서급 텍스트)은 싣지 않는다 — 펼칠 때 /data/runs/:id에서 가져온다.
+  app.get("/data/projects/:name/plan-feed", async (req) => {
+    const { name } = req.params as { name: string };
+    return prisma.run.findMany({
+      where: { project: name },
+      orderBy: { createdAt: "asc" },
+      take: -100, // 최근 100개 (오름차순 유지)
+      select: {
+        id: true,
+        title: true,
+        brief: true,
+        status: true,
+        commit: true,
+        error: true,
+        createdAt: true,
+        updatedAt: true,
+        parentRunId: true,
+        planSteps: true,
+        stepDevs: true,
+        agents: true,
+        planRevisions: {
+          orderBy: { version: "asc" },
+          select: { id: true, version: true, kind: true, feedback: true, createdAt: true },
+        },
+      },
+    });
   });
 
   // One project's record.

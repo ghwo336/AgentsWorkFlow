@@ -35,6 +35,7 @@ export async function resumeFromInput(
       approvedPlan: st.plan,
       steps: st.steps,
       stepDevs: st.stepDevs,
+      stepCommits: st.stepCommits,
       brief: st.brief,
       targetDir: st.targetDir,
       project: st.project,
@@ -68,9 +69,14 @@ export async function resumeFromInput(
   let resolveStepId = parent;
   if (decision.action === "commit" && (await git.hasChanges(st.targetDir))) {
     const title = (await store.getTitle(runId)) ?? "agent-loop change";
+    // 계획이 정한 커밋 제목이 있으면 그대로 (검증은 사용자 승인으로 대체됐음을
+    // 본문에 남긴다), 없으면 레거시 형식.
+    const subject = st.stepCommits[stuckIdx]?.trim();
     const sha = await git.commitAll(
       st.targetDir,
-      `${title} — ${stuckTag} (사용자 승인 커밋)\n\n${st.steps[stuckIdx]}`
+      subject
+        ? `${subject}\n\n${st.steps[stuckIdx]}\n\n작업: ${title} (${stuckTag}) — 사용자 승인 커밋`
+        : `${title} — ${stuckTag} (사용자 승인 커밋)\n\n${st.steps[stuckIdx]}`
     );
     const step = await reporter.startStep({
       kind: "commit",

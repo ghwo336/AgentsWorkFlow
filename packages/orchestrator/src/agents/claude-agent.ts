@@ -125,6 +125,20 @@ export class ClaudePlanner implements Planner {
   }
 
   async plan(req: PlanRequest, reporter: PhaseReporter): Promise<PlanResult> {
+    // 후속 작업이면 직전 작업의 맥락(당시 기획·커밋·실패 사유)을 앞에 깔아,
+    // 처음부터 다시 만들지 않고 그 위의 증분으로 계획하게 한다.
+    const l = req.lineage;
+    const lineageBlock = l
+      ? [
+          `# 직전 작업 맥락 — 이 요청은 아래 작업이 끝난 같은 코드베이스에서 이어집니다`,
+          `- 직전 작업: "${l.title}"${l.commit ? ` (커밋 ${l.commit.slice(0, 10)})` : ""} — 상태: ${l.status}`,
+          l.error ? `- 직전 작업이 남긴 문제/중단 사유: ${l.error}` : "",
+          l.plan ? `- 당시 승인된 기획:\n${l.plan}` : "",
+          `기존에 동작하는 부분은 유지하고, 이번 요청의 증분만 계획하세요. 저장소를 먼저 읽고 현재 구조에 맞추세요.`,
+        ]
+          .filter(Boolean)
+          .join("\n")
+      : "";
     const body =
       req.previousPlan && req.feedback
         ? [
@@ -134,7 +148,7 @@ export class ClaudePlanner implements Planner {
             `수정된 전체 계획을 처음부터 다시 제시하세요 (끝에 \`\`\`steps 블록 포함).`,
           ].join("\n\n")
         : req.brief;
-    const prompt = [workspaceRule(req.cwd), learnedBlock(req.learned), body]
+    const prompt = [workspaceRule(req.cwd), learnedBlock(req.learned), lineageBlock, body]
       .filter(Boolean)
       .join("\n\n");
     let system = `${PLAN_SYSTEM}\n${STEPS_SYSTEM}`;
@@ -157,6 +171,7 @@ export class ClaudePlanner implements Planner {
       isError: result.isError,
       steps: parsed.steps,
       devs: parsed.devs,
+      commits: parsed.commits,
       team: parsed.team,
     };
   }

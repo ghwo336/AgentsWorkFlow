@@ -14,6 +14,7 @@ export interface PlanResult extends AgentResult {
   // text = 승인 UI용 계획 본문 (machine 블록 제거됨)
   steps: string[];
   devs: (string | null)[]; // 단계별 담당 개발자 person id (미배정 = null)
+  commits: (string | null)[]; // 단계별 conventional commit 제목 (미지정 = null)
   team: string[] | null; // 자동 배치 run에서 호재가 추천한 좌석 키
 }
 
@@ -34,6 +35,15 @@ export interface PlanRequest {
   // every ```steps item must be {"desc", "dev"} — the planner matches each step
   // to the specialist whose stack fits it (프론트 단계→태경, API 단계→민재, …).
   assignableDevs?: Array<{ key: string; name: string; specialty?: string }>;
+  // 후속 작업 맥락: 이 run이 이어받은 직전 작업 (parentRunId에서 파생). 있으면
+  // 플래너는 그 작업이 끝난 같은 코드베이스 위의 "증분"으로 계획해야 한다.
+  lineage?: {
+    title: string;
+    plan: string | null; // 당시 승인된 기획 전문
+    commit: string | null; // 완료 커밋 (실패로 끝났으면 null일 수 있음)
+    error: string | null; // 실패/중단으로 끝났다면 그 사유
+    status: string;
+  };
 }
 
 export interface BuildRequest {

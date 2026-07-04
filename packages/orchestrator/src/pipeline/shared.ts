@@ -1,5 +1,5 @@
 import { REVIEWER_AGENT_ID, type RunRoster } from "@agent-loop/shared/roster";
-import type { Reviewer, VerifyResult } from "../agents/types.js";
+import type { PlanRequest, Reviewer, VerifyResult } from "../agents/types.js";
 import type { RunReporter } from "../reporter.js";
 import type { PipelineDeps } from "./types.js";
 
@@ -69,12 +69,14 @@ export async function planOnce(
     suggestTeam?: boolean;
     assignableDevs?: Array<{ key: string; name: string; specialty?: string }>;
     learned?: string; // 팀 학습 노트 (프로젝트 + 호재 개인 교훈)
+    lineage?: PlanRequest["lineage"]; // 후속 작업일 때 직전 작업 맥락
   } = {}
 ): Promise<{
   text: string;
   stepId: string;
   steps: string[];
   devs: (string | null)[];
+  commits: (string | null)[];
   team: string[] | null;
 } | null> {
   const { planner, config } = deps;
@@ -98,7 +100,16 @@ export async function planOnce(
   );
 
   const result = await planner.plan(
-    { brief, cwd: targetDir, previousPlan, feedback, suggestTeam, assignableDevs, learned: opts.learned },
+    {
+      brief,
+      cwd: targetDir,
+      previousPlan,
+      feedback,
+      suggestTeam,
+      assignableDevs,
+      learned: opts.learned,
+      lineage: opts.lineage,
+    },
     step
   );
   if (result.isError || !result.text) {
@@ -110,7 +121,14 @@ export async function planOnce(
     model: "opus",
   });
   await step.finish("passed", compactAgentSummary(result.text, "승인용 구현 계획을 작성했습니다."));
-  return { text: result.text, stepId: step.id, steps: result.steps, devs: result.devs, team: result.team };
+  return {
+    text: result.text,
+    stepId: step.id,
+    steps: result.steps,
+    devs: result.devs,
+    commits: result.commits,
+    team: result.team,
+  };
 }
 
 export interface ReviewOutcome {

@@ -2,17 +2,15 @@
 
 import { useMemo, useState } from "react";
 import { agentForStep, TeamRoster } from "../../../lib/agents";
-import { Markdown } from "../../../lib/Markdown";
 import type { Run, RunDetail } from "../../../lib/types";
 import { RunViz } from "../_viz";
 import { useWorkspace } from "../useWorkspace";
 import { AgentChat } from "./AgentChat";
 import { AgentWorkSummary } from "./AgentWorkSummary";
-import { ApprovalPanel } from "./ApprovalPanel";
-import { FollowUpPanel } from "./FollowUpPanel";
 import { InterventionPanel } from "./InterventionPanel";
 import { LiveLog } from "./LiveLog";
 import { NewTaskForm } from "./NewTaskForm";
+import { PlanFeed } from "./PlanFeed";
 import { ProjectSettings } from "./ProjectSettings";
 import { ResumePanel } from "./ResumePanel";
 import { RunDetailCard, RunList } from "./RunList";
@@ -39,6 +37,7 @@ export function Workspace({
     selected,
     setSelected,
     detail,
+    feed,
     booting,
     error,
     start,
@@ -138,32 +137,52 @@ export function Workspace({
         </>
       )}
 
-      {/* ── 기획: 새 작업 시작 + 계획 승인/수정 + 현재 기획 전문 ─────── */}
+      {/* ── 기획: 프로젝트의 기획 스레드 하나 — 요청·계획·수정·결과·후속이
+             한 대화 피드로 이어지고, 다음 명령은 맨 아래 입력창 하나로 보낸다
+             (의미는 마지막 run 상태가 정함: 수정 요청/지침/후속 기획).
+             첫 작업만 풀 폼(팀 선택·사전 대화)으로 시작한다. */}
       {tab === "plan" && (
         <>
-          {detail?.status === "awaiting_approval" && (
-            <ApprovalPanel
-              plan={detail.plan ?? ""}
-              onApprove={(editedPlan) => decide(true, editedPlan)}
-              onReject={() => decide(false)}
-              onRevise={(feedback) => revise(feedback)}
-            />
-          )}
-          {detail?.status === "committed" && (
-            <FollowUpPanel baseTitle={detail.title} commit={detail.commit} onStart={start} />
-          )}
-          <NewTaskForm onStart={start} defaultTargetDir={defaultTargetDir} />
-          {detail && detail.status !== "awaiting_approval" && detail.plan && (
+          {feed === null && (
             <div className="panel">
-              <div className="row spread">
-                <b>현재 기획</b>
-                <span className="muted small">{detail.title}</span>
-              </div>
-              <div className="md" style={{ marginTop: 8 }}>
-                <Markdown>{detail.plan}</Markdown>
-              </div>
+              <div className="skeleton" style={{ height: 14 }} />
+              <div className="skeleton" style={{ height: 14, marginTop: 8 }} />
+              <div className="skeleton" style={{ height: 44, marginTop: 8 }} />
             </div>
           )}
+          {feed && feed.length > 0 && (
+            <PlanFeed
+              runs={feed}
+              onApprove={(id, editedPlan) => decide(id, true, editedPlan)}
+              onReject={(id) => decide(id, false)}
+              onRevise={revise}
+              onGuide={(id, feedback) => intervene(id, { action: "guide", feedback })}
+              onQuickIntervene={(id, action) => intervene(id, { action })}
+              onRetry={retry}
+              onFollowUp={(text, parentRunId) =>
+                start({
+                  title: text.split("\n")[0].trim().slice(0, 60) || "후속 작업",
+                  brief: text,
+                  parentRunId,
+                })
+              }
+              onOpenRun={(id) => {
+                setSelected(id);
+                setTab("work");
+              }}
+            />
+          )}
+          {feed &&
+            (feed.length === 0 ? (
+              <NewTaskForm onStart={start} defaultTargetDir={defaultTargetDir} />
+            ) : (
+              <details className="feed-advanced">
+                <summary className="muted small">
+                  ＋ 별개의 새 작업 시작 (팀 직접 선택 · Opus와 사전 대화)
+                </summary>
+                <NewTaskForm onStart={start} defaultTargetDir={defaultTargetDir} />
+              </details>
+            ))}
         </>
       )}
 
@@ -205,15 +224,15 @@ export function Workspace({
               {detail.status === "needs_input" && (
                 <InterventionPanel
                   reason={detail.error}
-                  onChat={(messages) => interveneChat(messages)}
-                  onGuide={(feedback) => intervene({ action: "guide", feedback })}
-                  onCommit={() => intervene({ action: "commit" })}
-                  onSkip={() => intervene({ action: "skip" })}
-                  onAbort={() => intervene({ action: "abort" })}
+                  onChat={(messages) => interveneChat(detail.id, messages)}
+                  onGuide={(feedback) => intervene(detail.id, { action: "guide", feedback })}
+                  onCommit={() => intervene(detail.id, { action: "commit" })}
+                  onSkip={() => intervene(detail.id, { action: "skip" })}
+                  onAbort={() => intervene(detail.id, { action: "abort" })}
                 />
               )}
               {(detail.status === "rejected" || detail.status === "failed") && (
-                <ResumePanel reason={detail.error} onRetry={() => retry()} />
+                <ResumePanel reason={detail.error} onRetry={() => retry(detail.id)} />
               )}
               <AgentWorkSummary
                 steps={detail.steps}

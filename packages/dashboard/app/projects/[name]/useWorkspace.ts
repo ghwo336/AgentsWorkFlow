@@ -4,7 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../../lib/api";
 import { errMsg } from "../../lib/err";
 import { useOrchestratorEvents } from "../../lib/hooks/useOrchestratorEvents";
-import type { ChatMessage, InterventionDecision, Run, RunDetail, StartRunInput } from "../../lib/types";
+import type {
+  ChatMessage,
+  InterventionDecision,
+  PlanFeedRun,
+  Run,
+  RunDetail,
+  StartRunInput,
+} from "../../lib/types";
 
 // Server-rendered first-paint data (page.tsx fetches it orchestrator-local and
 // ships it with the HTML). Present = no client-side boot fetch at all.
@@ -25,6 +32,9 @@ export function useWorkspace(project: string, initial?: WorkspaceInitial) {
   const [error, setError] = useState<string | null>(null);
   const [defaultTargetDir, setDefaultTargetDir] = useState<string>("");
   const [repos, setRepos] = useState<string[]>([]);
+  // 기획 스레드 피드 — 프로젝트의 run들을 시간순으로 (기획 탭 전용).
+  // null = 아직 로드 전 (빈 배열과 구분해 스켈레톤을 그릴 수 있게).
+  const [feed, setFeed] = useState<PlanFeedRun[] | null>(null);
 
   const seeded = useRef(!!initial);
   const selectedRef = useRef<string | null>(null);
@@ -67,6 +77,20 @@ export function useWorkspace(project: string, initial?: WorkspaceInitial) {
     },
     [applyDetail, fail]
   );
+
+  // 기획 피드 — 실패해도 페이지의 다른 부분은 살아 있어야 하므로 조용히 두고
+  // (에러 배너는 목록/상세 로드가 담당), 성공 시에만 갱신한다.
+  const loadFeed = useCallback(async () => {
+    try {
+      setFeed(await api.getPlanFeed(project));
+    } catch {
+      /* 피드는 다음 이벤트에서 재시도된다 */
+    }
+  }, [project]);
+
+  useEffect(() => {
+    loadFeed();
+  }, [loadFeed]);
 
   // The project's remembered default repo dir (best-effort; a project without a
   // row yet just has no default).
@@ -151,13 +175,14 @@ export function useWorkspace(project: string, initial?: WorkspaceInitial) {
       try {
         const e = JSON.parse(m.data);
         if (!e.runId) return;
-        // 어떤 이벤트든 목록은 갱신하고, 화면에 열려 있는 run의 이벤트일 때만
-        // 상세를 다시 받는다 (모르는 새 run이면 목록 갱신이 그걸 잡아 온다).
+        // 어떤 이벤트든 목록·피드는 갱신하고, 화면에 열려 있는 run의 이벤트일
+        // 때만 상세를 다시 받는다 (모르는 새 run이면 목록 갱신이 잡아 온다).
         loadRuns();
+        loadFeed();
         if (runIdsRef.current.has(e.runId) && e.runId === selectedRef.current) loadDetail(e.runId);
       } catch {}
     },
-    [loadRuns, loadDetail]
+    [loadRuns, loadDetail, loadFeed]
   );
   useOrchestratorEvents(onEvent);
 
@@ -168,81 +193,91 @@ export function useWorkspace(project: string, initial?: WorkspaceInitial) {
         setSelected(id);
         setError(null);
         loadRuns();
+        loadFeed();
         return true;
       } catch (err) {
         fail(err, "orchestrator 작업 시작 실패", true);
         return false;
       }
     },
-    [project, loadRuns, fail]
+    [project, loadRuns, loadFeed, fail]
   );
 
+  // 액션 후 화면 동기화 — 피드는 항상, 상세는 그 run이 열려 있을 때만.
+  const refreshAfterAction = useCallback(
+    (runId: string) => {
+      loadFeed();
+      if (selectedRef.current === runId) loadDetail(runId);
+    },
+    [loadFeed, loadDetail]
+  );
+
+  // 아래 액션들은 모두 대상 run id를 명시적으로 받는다 — 작업 탭(선택된 run)과
+  // 기획 피드(카드마다 다른 run)가 같은 배선을 쓰기 위해.
   const decide = useCallback(
-    async (approved: boolean, editedPlan?: string) => {
-      if (!detail) return;
+    async (runId: string, approved: boolean, editedPlan?: string) => {
       try {
-        if (approved) await api.approve(detail.id, editedPlan);
-        else await api.reject(detail.id);
+        if (approved) await api.approve(runId, editedPlan);
+        else await api.reject(runId);
         setError(null);
-        loadDetail(detail.id);
+        refreshAfterAction(runId);
       } catch (err) {
         fail(err, "승인/거절 요청 실패", true);
       }
     },
-    [detail, loadDetail, fail]
+    [refreshAfterAction, fail]
   );
 
   // Send feedback to re-plan (interactive refinement). The plan updates over SSE.
   const revise = useCallback(
-    async (feedback: string) => {
-      if (!detail) return;
+    async (runId: string, feedback: string) => {
       try {
-        await api.revise(detail.id, feedback);
+        await api.revise(runId, feedback);
         setError(null);
-        loadDetail(detail.id);
+        refreshAfterAction(runId);
       } catch (err) {
         fail(err, "수정 요청 실패", true);
       }
     },
-    [detail, loadDetail, fail]
+    [refreshAfterAction, fail]
   );
 
   // Resolve a run stuck at needs_input (guide/commit/skip/abort).
   const intervene = useCallback(
-    async (decision: InterventionDecision) => {
-      if (!detail) return;
+    async (runId: string, decision: InterventionDecision) => {
       try {
-        await api.resume(detail.id, decision);
+        await api.resume(runId, decision);
         setError(null);
-        loadDetail(detail.id);
+        refreshAfterAction(runId);
       } catch (err) {
         fail(err, "재개 요청 실패", true);
       }
     },
-    [detail, loadDetail, fail]
+    [refreshAfterAction, fail]
   );
 
   // Re-run a stopped run (rejected/failed) from where it left off.
-  const retry = useCallback(async () => {
-    if (!detail) return;
-    try {
-      await api.retry(detail.id);
-      setError(null);
-      loadDetail(detail.id);
-    } catch (err) {
-      fail(err, "다시 진행 요청 실패", true);
-    }
-  }, [detail, loadDetail, fail]);
+  const retry = useCallback(
+    async (runId: string) => {
+      try {
+        await api.retry(runId);
+        setError(null);
+        refreshAfterAction(runId);
+      } catch (err) {
+        fail(err, "다시 진행 요청 실패", true);
+      }
+    },
+    [refreshAfterAction, fail]
+  );
 
   // Discuss a stuck run with 호재(Opus) before deciding. Stateless — returns the
   // reply; the panel owns the thread state.
   const interveneChat = useCallback(
-    async (messages: ChatMessage[]): Promise<string> => {
-      if (!detail) return "";
-      const { reply } = await api.interveneChat(detail.id, messages);
+    async (runId: string, messages: ChatMessage[]): Promise<string> => {
+      const { reply } = await api.interveneChat(runId, messages);
       return reply;
     },
-    [detail]
+    []
   );
 
   return {
@@ -250,6 +285,7 @@ export function useWorkspace(project: string, initial?: WorkspaceInitial) {
     selected,
     setSelected,
     detail,
+    feed,
     booting,
     error,
     start,

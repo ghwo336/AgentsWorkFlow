@@ -12,3 +12,6 @@ workspaces/
 
 # 팀 학습 노트/제안함 — 런타임 데이터 (run이 쓰고 사용자가 승인)
 packages/orchestrator/agents-config/learned/
+
+# 에이전트 빌드 워크스페이스 (런타임 산출물)
+agent-workspaces/

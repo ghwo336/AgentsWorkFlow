@@ -36,8 +36,9 @@ model Run {
   agents    String? // JSON array of participating seat keys (e.g. ["build:minjae"]); null = 전원 (legacy)
   autoTeam  Boolean  @default(false) // true = 사용자가 팀을 안 골랐고 호재가 계획하며 배치 (revise 때 재배치 허용)
   plan      String? // approved plan text (from Opus)
-  planSteps String? // JSON array of decomposed plan-step descriptions (for restart-safe resume)
-  stepDevs  String? // JSON array (planSteps와 같은 길이) of assigned builder person ids ("taekyung"), null 항목 = 미배정
+  planSteps   String? // JSON array of decomposed plan-step descriptions (for restart-safe resume)
+  stepDevs    String? // JSON array (planSteps와 같은 길이) of assigned builder person ids ("taekyung"), null 항목 = 미배정
+  stepCommits String? // JSON array (planSteps와 같은 길이) of conventional commit subjects ("feat: …"), null 항목 = 미지정(레거시 메시지 폴백)
 
   targetDir String? // working copy path for this run
   commit    String? // final commit hash on success
@@ -48,14 +49,38 @@ model Run {
   folderId String? // research grouping; null = 미분류 (code runs never set this)
   folder   ResearchFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
 
-  events   Event[]
-  verdicts Verdict[]
-  usages   Usage[]
-  steps    Step[]
-  chatMsgs ChatMsg[]
+  // 후속 작업이 이어받은 직전 run의 id — 요구사항 스레드(원작업 → 후속들)를
+  // 제목 문자열이 아닌 진짜 링크로 묶는다. 부모가 지워져도 후속은 남아야
+  // 하므로 FK 관계 없이 느슨한 참조로 둔다.
+  parentRunId String?
+
+  events        Event[]
+  verdicts      Verdict[]
+  usages        Usage[]
+  steps         Step[]
+  chatMsgs      ChatMsg[]
+  planRevisions PlanRevision[]
 
   @@index([project])
   @@index([folderId])
+  @@index([parentRunId])
+}
+
+/// 기획 문서의 버전 이력. Run.plan은 항상 최신본으로 덮어써지므로, 계획이
+/// 만들어질 때마다(최초 기획 / 수정 요청 반영 / 승인 시 직접 편집) 그 시점의
+/// 전문을 한 줄씩 스냅샷으로 남긴다 — 기획 탭의 "기획 변천사"가 이걸 그린다.
+model PlanRevision {
+  id        String   @id @default(cuid())
+  runId     String
+  run       Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  version   Int // 1부터 증가 (run 안에서)
+  kind      String   @default("initial") // initial | revise | edit(승인하며 직접 수정)
+  text      String // 이 버전의 계획 전문
+  feedback  String? // 이 버전을 만들어낸 사용자 수정 요청 (revise일 때만)
+  createdAt DateTime @default(now())
+
+  @@unique([runId, version])
+  @@index([runId])
 }
 
 /// One agent's unit of work within a run (a "span"): plan, a single build

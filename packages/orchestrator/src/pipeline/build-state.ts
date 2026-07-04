@@ -11,6 +11,7 @@ export interface BuildState {
   plan: string;
   steps: string[];
   stepDevs: (string | null)[];
+  stepCommits: (string | null)[]; // 단계별 커밋 제목 (미지정 = 레거시 메시지)
   brief: string;
   targetDir: string;
   project: string; // 팀 학습 노트 스코프 키
@@ -41,6 +42,7 @@ export async function loadBuildState(
     plan: st.plan,
     steps,
     stepDevs: st.stepDevs,
+    stepCommits: st.stepCommits,
     brief: st.brief,
     targetDir: st.targetDir,
     project: st.project,

@@ -56,6 +56,8 @@ const StartSchema = z.object({
   // are rejected (never silently coerced to "전원"), and the combo must be
   // runnable — e.g. 기획+검증 without 개발 is rejected.
   agents: z.array(z.string()).optional(),
+  // 후속 작업의 부모 run id — 실재하지 않는 id는 링크 없이 생성된다.
+  parentRunId: z.string().optional(),
 });
 app.post("/runs", async (req, reply) => {
   const parsed = StartSchema.safeParse(req.body);

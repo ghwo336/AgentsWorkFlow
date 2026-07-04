@@ -26,6 +26,7 @@ export async function executeSteps(
     approvedPlan: string;
     steps: string[];
     stepDevs?: (string | null)[]; // 단계별 담당 개발자 (계획에서 배정)
+    stepCommits?: (string | null)[]; // 단계별 conventional commit 제목 (계획에서 지정)
     brief: string;
     targetDir: string;
     project: string; // 팀 학습 노트 스코프 키
@@ -64,6 +65,7 @@ export async function executeSteps(
       parentId,
       description: steps[i],
       assignedDev: args.stepDevs?.[i] ?? undefined,
+      commitSubject: args.stepCommits?.[i] ?? undefined,
       index: i + 1,
       total: steps.length,
       completed: [...completed],
@@ -116,6 +118,7 @@ interface StepCtx {
   parentId: string;
   description: string;
   assignedDev?: string; // 이 단계의 담당 개발자 person id (계획에서 배정)
+  commitSubject?: string; // 이 단계의 conventional commit 제목 (계획에서 지정)
   index: number;
   total: number;
   completed: string[];
@@ -408,7 +411,13 @@ async function commitStep(
   });
   const title = (await store.getTitle(ctx.runId)) ?? "agent-loop change";
   const reviewerNames = args.reviews.map((r) => r.reviewer.name).join(", ");
-  const message = `${title} — ${tag}\n\n${ctx.description}\n\nVerified by ${reviewerNames} (attempt ${args.attempt}).`;
+  // 제목은 계획이 정한 conventional commit ("feat: …")을 그대로 쓰고, 본문에
+  // 단계 설명과 출처(run·검증자)를 남긴다. 계획에 커밋 제목이 없는 레거시
+  // run만 옛 "<제목> — 단계 N/M" 형식으로 폴백.
+  const subject = ctx.commitSubject?.trim();
+  const message = subject
+    ? `${subject}\n\n${ctx.description}\n\n작업: ${title} (${tag})\nVerified by ${reviewerNames} (attempt ${args.attempt}).`
+    : `${title} — ${tag}\n\n${ctx.description}\n\nVerified by ${reviewerNames} (attempt ${args.attempt}).`;
   const sha = await git.commitAll(targetDir, message);
   await step.finish("passed", `${tag} 검증 통과 후 ${sha.slice(0, 10)} 커밋.`);
   await reporter.log(

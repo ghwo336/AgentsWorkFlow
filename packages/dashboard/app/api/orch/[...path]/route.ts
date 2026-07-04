@@ -20,6 +20,7 @@ const ALLOW: Record<string, RegExp[]> = {
     /^\/data\/runs\/[^/]+\/(events|chat)$/,
     /^\/data\/projects$/,
     /^\/data\/projects\/[^/]+$/,
+    /^\/data\/projects\/[^/]+\/plan-feed$/,
     /^\/data\/steps\/[^/]+$/,
     /^\/data\/research-folders$/,
     /^\/data\/agents\/(harnesses|learned)$/,

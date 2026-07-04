@@ -191,6 +191,48 @@ textarea:focus, input:focus, select:focus { outline: none; border-color: var(--a
 .md th, .md td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; }
 .md hr { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
 
+/* ── 기획 스레드 (plan feed) — 프로젝트의 기획 활동 전체를 대화로 ────
+   말풍선(내 요청/수정 요청)·계획 카드(단계 요약)·결과 줄이 시간순으로
+   이어지고, 아래 입력창 하나로 다음 명령을 보낸다. */
+.plan-feed {
+  margin-top: 12px; max-height: 64vh; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 12px; border: 2px solid var(--border); border-radius: 6px;
+  background: var(--panel-2);
+}
+.feed-run { display: flex; flex-direction: column; gap: 10px; }
+.feed-run + .feed-run { margin-top: 6px; padding-top: 12px; border-top: 1px dashed var(--border); }
+.feed-turn { max-width: 96%; }
+.feed-plan-card { background: var(--panel); min-width: 260px; }
+.feed-plan-card.feed-awaiting { border-color: var(--accent); }
+.feed-steps { margin: 0; padding-left: 20px; font-size: 12.5px; line-height: 1.6; }
+.feed-steps li { margin: 2px 0; }
+.feed-plan-full {
+  margin-top: 8px; max-height: 340px; overflow-y: auto;
+  background: var(--panel-2); border: 1px solid var(--border);
+  border-radius: 6px; padding: 10px 12px;
+}
+.feed-btn { box-shadow: none; padding: 3px 10px; }
+.feed-inline-toggle {
+  background: none; border: none; box-shadow: none; padding: 0; margin-left: 6px;
+  color: var(--accent); font: inherit; font-size: 11.5px; cursor: pointer; font-weight: 600;
+}
+.feed-inline-toggle:active { transform: none; }
+/* run의 결말/현황 한 줄 — 다음 명령의 근거가 피드 안에 보이게. */
+.feed-result {
+  font-size: 12.5px; line-height: 1.5; padding: 7px 10px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--panel);
+}
+.feed-result.ok { border-color: rgba(87, 217, 154, .45); }
+.feed-result.warn { border-color: rgba(255, 200, 97, .5); background: rgba(255, 200, 97, .07); }
+.feed-result.wait { border-color: rgba(91, 157, 255, .5); background: rgba(91, 157, 255, .07); }
+.feed-result.run { border-color: rgba(255, 200, 97, .35); }
+.feed-result.muted { color: var(--muted); }
+/* 접힌 "별개의 새 작업" — 스레드가 주인공이니 풀 폼은 평소에 숨긴다. */
+.feed-advanced { margin-bottom: 16px; }
+.feed-advanced > summary { cursor: pointer; padding: 6px 2px; }
+.feed-advanced[open] > summary { margin-bottom: 8px; }
+
 /* Gated "waiting for approval" banner — amber, clearly not a done/green state. */
 .approval-wait {
   font-size: 12.5px; line-height: 1.5;

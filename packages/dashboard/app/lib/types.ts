@@ -50,7 +50,53 @@ export type Run = {
   targetDir?: string | null;
   // research grouping; null/undefined = 미분류 (code runs never set this)
   folderId?: string | null;
+  // 후속 작업이 이어받은 원작업 run id (요구사항 스레드 링크)
+  parentRunId?: string | null;
   createdAt: string;
+};
+
+// 기획 문서의 한 버전 스냅샷 — Run.plan은 최신본만 들고 있고, 변천사는 이걸로.
+export type PlanRevision = {
+  id: string;
+  version: number; // 1부터
+  kind: string; // initial | revise | edit(승인하며 직접 수정)
+  text: string; // 이 버전의 계획 전문
+  feedback?: string | null; // 이 버전을 만든 사용자 수정 요청 (revise일 때만)
+  createdAt: string;
+};
+
+// 요구사항 스레드의 한 노드 — 부모/후속 run의 링크 렌더용 최소 컬럼.
+export type RunRef = {
+  id: string;
+  title: string;
+  status: string;
+  commit?: string | null;
+  createdAt: string;
+};
+
+// 기획 피드의 한 run — 스레드(내 요청 → 계획 버전들 → 결과) 렌더용.
+// revision 전문은 무거워서 피드에 실리지 않는다 (펼칠 때 getRun으로).
+export type PlanFeedRevision = {
+  id: string;
+  version: number;
+  kind: string; // initial | revise | edit
+  feedback?: string | null;
+  createdAt: string;
+};
+export type PlanFeedRun = {
+  id: string;
+  title: string;
+  brief: string;
+  status: string;
+  commit?: string | null;
+  error?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  parentRunId?: string | null;
+  planSteps?: string | null; // JSON string[] — 최신 계획의 분해 단계
+  stepDevs?: string | null; // JSON (string|null)[] — 단계별 담당 개발자
+  agents?: string | null;
+  planRevisions: PlanFeedRevision[];
 };
 
 export type RunEvent = {
@@ -109,6 +155,11 @@ export type RunDetail = Run & {
   // 전체 행 수 — events/chatMsgs가 최신 N개로 잘려 왔을 때 "더보기" 잔여 계산용.
   eventsTotal?: number;
   chatTotal?: number;
+  // 기획 변천사 (버전 오름차순) — 옛 run은 빈 배열일 수 있다.
+  planRevisions?: PlanRevision[];
+  // 요구사항 스레드: 이 run이 이어받은 원작업 / 이 run에서 파생된 후속들.
+  parentRun?: RunRef | null;
+  childRuns?: RunRef[];
 };
 
 // One turn in the pre-plan requirements chat (client-held history).
@@ -120,4 +171,5 @@ export type StartRunInput = {
   targetDir?: string;
   workspaceName?: string; // name a fresh workspace folder (used when targetDir is empty)
   agents?: string[]; // participating roster agent ids; omit for the full team
+  parentRunId?: string; // 후속 작업일 때 원작업 run id (요구사항 스레드 링크)
 };

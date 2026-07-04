@@ -5,11 +5,10 @@
 
 export { AgentChat } from "./AgentChat";
 export { AgentWorkSummary } from "./AgentWorkSummary";
-export { ApprovalPanel } from "./ApprovalPanel";
-export { FollowUpPanel } from "./FollowUpPanel";
 export { InterventionPanel } from "./InterventionPanel";
 export { LiveLog } from "./LiveLog";
 export { NewTaskForm } from "./NewTaskForm";
+export { PlanFeed } from "./PlanFeed";
 export { ProjectSettings } from "./ProjectSettings";
 export { RepoPicker } from "./RepoPicker";
 export { RunDetailCard, RunList } from "./RunList";

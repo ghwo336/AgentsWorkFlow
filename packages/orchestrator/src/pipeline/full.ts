@@ -43,12 +43,16 @@ export async function plan(
   const project = (await deps.store.getProject(runId)) ?? "default";
   const learned =
     [loadProjectLessons(project), loadAgentLessons("hojae")].filter(Boolean).join("\n") || undefined;
+  // 후속 작업이면 직전 작업 맥락(기획·커밋·실패 사유)을 플래너에 자동 주입 —
+  // revise 재기획에서도 유지되도록 여기서(run 자신에게서) 파생한다.
+  const lineage = (await deps.store.getLineageFor(runId)) ?? undefined;
   const planned = await planOnce(deps, brief, targetDir, reporter, order, {
     previousPlan: opts.previousPlan,
     feedback: opts.feedback,
     suggestTeam: opts.suggestTeam,
     assignableDevs: assignableDevsFor(opts.builderIds),
     learned,
+    lineage,
   });
   if (planned === null) return; // planOnce already marked the run failed
 
@@ -60,7 +64,14 @@ export async function plan(
     builderIds: opts.builderIds,
     planned,
   });
-  await deps.store.saveSteps(runId, planned.steps, devs);
+  await deps.store.saveSteps(runId, planned.steps, devs, planned.commits);
+  // 이력 스냅샷을 상태 전환보다 먼저 — SSE를 받은 대시보드가 상세를 다시
+  // 읽을 때 새 버전이 이미 보이도록.
+  await deps.store.savePlanRevision(
+    runId,
+    planned.text,
+    opts.feedback ? { kind: "revise", feedback: opts.feedback } : { kind: "initial" }
+  );
   await reporter.status("awaiting_approval", { plan: planned.text });
   await reporter.log(
     "approval",
@@ -85,6 +96,7 @@ export async function build(deps: PipelineDeps, runId: string, reporter: RunRepo
     approvedPlan: st.plan,
     steps: st.steps,
     stepDevs: st.stepDevs,
+    stepCommits: st.stepCommits,
     brief: st.brief,
     targetDir: st.targetDir,
     project: st.project,

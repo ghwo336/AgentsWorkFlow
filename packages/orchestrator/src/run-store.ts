@@ -31,6 +31,8 @@ export interface CreateRunInput {
   agents?: string[] | null;
   // 사용자가 팀을 고르지 않음 — 호재가 계획하며 배치(추천 적용) 대상.
   autoTeam?: boolean;
+  // 후속 작업이 이어받은 직전 run — 요구사항 스레드 링크 (없으면 독립 작업).
+  parentRunId?: string;
 }
 
 // Persistence boundary for runs/projects. Keeps Prisma details out of the
@@ -43,6 +45,11 @@ export class RunStore {
       create: { name: input.project },
       update: {},
     });
+    // 부모 링크는 실재하는 run만 — 없는 id가 오면 스레드가 끊긴 채로 두느니
+    // 링크 없이 만든다 (조용히 무시).
+    const parentRunId = input.parentRunId
+      ? ((await prisma.run.findUnique({ where: { id: input.parentRunId }, select: { id: true } }))?.id ?? null)
+      : null;
     const run = await prisma.run.create({
       data: {
         title: input.title,
@@ -51,6 +58,7 @@ export class RunStore {
         status: "planning",
         agents: input.agents?.length ? JSON.stringify(input.agents) : null,
         autoTeam: input.autoTeam ?? false,
+        parentRunId,
       },
     });
     return { id: run.id };
@@ -79,6 +87,29 @@ export class RunStore {
     return prisma.run.update({ where: { id: runId }, data: { plan } });
   }
 
+  // 기획 스냅샷 한 줄 추가 — Run.plan(최신본)은 덮어써지므로 버전 이력은
+  // 여기 쌓인다. 한 run에 planner는 하나뿐이라 버전 경쟁은 없다.
+  async savePlanRevision(
+    runId: string,
+    text: string,
+    opts: { kind: "initial" | "revise" | "edit"; feedback?: string }
+  ): Promise<void> {
+    const last = await prisma.planRevision.findFirst({
+      where: { runId },
+      orderBy: { version: "desc" },
+      select: { version: true },
+    });
+    await prisma.planRevision.create({
+      data: {
+        runId,
+        version: (last?.version ?? 0) + 1,
+        kind: opts.kind,
+        text,
+        feedback: opts.feedback ?? null,
+      },
+    });
+  }
+
   // Apply 호재's recommended team (auto-team runs) — seat keys onto Run.agents.
   saveAgents(runId: string, seatKeys: string[]): Promise<unknown> {
     return prisma.run.update({
@@ -89,13 +120,20 @@ export class RunStore {
 
   // Persist the decomposed plan steps so the build phase can resume from the DB
   // after an approval — even across an orchestrator restart. `devs` (같은 길이,
-  // 항목 = builder person id 또는 null)는 단계별 담당 개발자 배정.
-  saveSteps(runId: string, steps: string[], devs?: (string | null)[]): Promise<unknown> {
+  // 항목 = builder person id 또는 null)는 단계별 담당 개발자 배정, `commits`
+  // (같은 길이)는 단계별 conventional commit 제목.
+  saveSteps(
+    runId: string,
+    steps: string[],
+    devs?: (string | null)[],
+    commits?: (string | null)[]
+  ): Promise<unknown> {
     return prisma.run.update({
       where: { id: runId },
       data: {
         planSteps: JSON.stringify(steps),
         stepDevs: devs?.some((d) => d) ? JSON.stringify(devs) : null,
+        stepCommits: commits?.some((c) => c) ? JSON.stringify(commits) : null,
       },
     });
   }
@@ -103,6 +141,25 @@ export class RunStore {
   async getTitle(runId: string): Promise<string | null> {
     const r = await prisma.run.findUnique({ where: { id: runId } });
     return r?.title ?? null;
+  }
+
+  // 이 run이 이어받은 직전(부모) 작업의 맥락 — 후속 기획 프롬프트에 주입된다.
+  // 부모가 없거나(독립 작업) 지워졌으면 null.
+  async getLineageFor(runId: string): Promise<{
+    title: string;
+    plan: string | null;
+    commit: string | null;
+    error: string | null;
+    status: string;
+  } | null> {
+    const r = await prisma.run.findUnique({ where: { id: runId }, select: { parentRunId: true } });
+    if (!r?.parentRunId) return null;
+    const parent = await prisma.run.findUnique({
+      where: { id: r.parentRunId },
+      select: { title: true, plan: true, commit: true, error: true, status: true },
+    });
+    if (!parent) return null;
+    return parent;
   }
 
   // 이 run이 속한 프로젝트 이름 — 팀 학습 노트(learn-store)의 스코프 키.
@@ -137,21 +194,23 @@ export class RunStore {
     project: string; // 학습 노트 스코프 키
     steps: string[];
     stepDevs: (string | null)[]; // 단계별 담당 개발자 person id (미배정 = null)
+    stepCommits: (string | null)[]; // 단계별 커밋 제목 (미지정 = null)
     agents: string[] | null; // participating seat keys; null = 전원
     autoTeam: boolean; // 호재가 팀을 배치하는 run (revise 시 재배치 허용)
   } | null> {
     const r = await prisma.run.findUnique({ where: { id: runId } });
     if (!r) return null;
     const steps = parsePlanSteps(r.planSteps);
-    let stepDevs: (string | null)[] = [];
-    if (r.stepDevs) {
+    // stepDevs/stepCommits: steps와 같은 길이의 nullable 배열 (깨지면 빈 배열).
+    const parseAligned = (json: string | null): (string | null)[] => {
+      if (!json) return [];
       try {
-        const arr = JSON.parse(r.stepDevs);
-        if (Array.isArray(arr)) stepDevs = arr.map((d) => (d ? String(d) : null));
+        const arr = JSON.parse(json);
+        return Array.isArray(arr) ? arr.map((d) => (d ? String(d) : null)) : [];
       } catch {
-        /* malformed — no assignments */
+        return [];
       }
-    }
+    };
     return {
       status: r.status,
       brief: r.brief,
@@ -159,7 +218,8 @@ export class RunStore {
       targetDir: r.targetDir,
       project: r.project,
       steps,
-      stepDevs,
+      stepDevs: parseAligned(r.stepDevs),
+      stepCommits: parseAligned(r.stepCommits),
       agents: parseAgents(r.agents),
       autoTeam: r.autoTeam,
     };

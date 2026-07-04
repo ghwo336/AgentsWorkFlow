@@ -2,6 +2,7 @@ import type {
   ChatMessage,
   ChatMsg,
   InterventionDecision,
+  PlanFeedRun,
   Project,
   ProjectSummary,
   ResearchFolder,
@@ -105,6 +106,13 @@ export const api = {
 
   listRuns: (project: string) =>
     getJson<Run[]>(`/api/orch/data/runs?project=${encodeURIComponent(project)}`, "작업 목록 로드 실패"),
+
+  // 기획 스레드 피드 — 프로젝트의 run들을 시간순으로 (revision 전문 제외).
+  getPlanFeed: (project: string) =>
+    getJson<PlanFeedRun[]>(
+      `/api/orch/data/projects/${encodeURIComponent(project)}/plan-feed`,
+      "기획 피드 로드 실패"
+    ),
 
   // 라이브 뷰용 상세 — SSE 이벤트마다 다시 받으므로 최신 로그/대화만 가져온다
   // (verdicts=0: diff가 실려 무겁고 라이브 뷰에선 안 쓴다). 과거분은 아래
