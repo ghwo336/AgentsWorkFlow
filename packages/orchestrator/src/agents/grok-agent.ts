@@ -2,7 +2,8 @@ import { spawn } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { learnedBlock, splitResearchLessons } from "./claude-agent.js";
+import { agentEnv } from "./gate-env.js";
+import { learnedBlock, researchHistoryBlock, splitResearchLessons } from "./research-shared.js";
 import type { PhaseReporter } from "../reporter.js";
 import type { Researcher, ResearchRequest, ResearchResult } from "./types.js";
 
@@ -50,7 +51,9 @@ function runGrok(
   opts: { cwd: string; timeoutMs: number; maxBuffer: number }
 ): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const child = spawn(bin, args, { cwd: opts.cwd, stdio: ["ignore", "pipe", "pipe"] });
+    // Third-party binary running model-controlled work — never hand it our
+    // secrets (ORCH_TOKEN 등). agentEnv keeps everything else (HOME의 auth 포함).
+    const child = spawn(bin, args, { cwd: opts.cwd, env: agentEnv(), stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
     let settled = false;
@@ -109,17 +112,9 @@ export class GrokResearcher implements Researcher {
   ) {}
 
   async research(req: ResearchRequest, reporter: PhaseReporter): Promise<ResearchResult> {
-    const historyBlock = req.history?.length
-      ? [
-          `# 지금까지의 리서치 대화 (맥락 — 이미 답한 내용은 반복하지 말 것)`,
-          ...req.history
-            .slice(-8)
-            .map((t) => `${t.role === "user" ? "[질문]" : "[이전 보고서]"}\n${t.text.slice(0, 4000)}`),
-        ].join("\n\n")
-      : "";
     const prompt = [
       learnedBlock(req.learned),
-      historyBlock,
+      researchHistoryBlock(req.history),
       req.history?.length ? `# 후속 질문` : `# 리서치 질문`,
       req.question,
       ``,

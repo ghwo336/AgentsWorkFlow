@@ -120,6 +120,19 @@ app.post("/runs/:id/resume", async (req, reply) => {
   return { ok: true };
 });
 
+// Chat thread payload — shared by the pre-plan chat (/chat) and the stuck-run
+// chat (/runs/:id/intervene-chat). 사용처보다 위에 선언 (TDZ 함정 방지).
+const ChatSchema = z.object({
+  messages: z
+    .array(
+      z.object({
+        role: z.enum(["user", "assistant"]),
+        content: z.string().min(1),
+      })
+    )
+    .min(1),
+});
+
 // Talk to 호재(Opus) about a stuck (needs_input) run before deciding. Stateless:
 // the client sends the whole thread; chat.ts assembles the stuck context.
 app.post("/runs/:id/intervene-chat", async (req, reply) => {
@@ -162,16 +175,6 @@ app.post("/runs/:id/retry", async (req, reply) => {
 
 // Pre-plan requirements chat. Stateless: the client sends the whole thread and
 // gets Opus's next reply. No run is created until the user commits to a plan.
-const ChatSchema = z.object({
-  messages: z
-    .array(
-      z.object({
-        role: z.enum(["user", "assistant"]),
-        content: z.string().min(1),
-      })
-    )
-    .min(1),
-});
 app.post("/chat", async (req, reply) => {
   const parsed = ChatSchema.safeParse(req.body);
   if (!parsed.success) {

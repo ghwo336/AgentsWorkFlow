@@ -1,5 +1,6 @@
 import { BuildGateReviewer } from "./agents/build-gate.js";
-import { ClaudeBuilder, ClaudePlanner, ClaudeResearcher } from "./agents/claude-agent.js";
+import { ClaudeBuilder, ClaudePlanner } from "./agents/claude-agent.js";
+import { ClaudeResearcher } from "./agents/claude-researcher.js";
 import { ClaudeReviewer } from "./agents/claude-reviewer.js";
 import { CodexVerifier } from "./agents/codex-agent.js";
 import { CommandReviewer } from "./agents/command-reviewer.js";

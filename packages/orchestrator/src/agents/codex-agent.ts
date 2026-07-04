@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CodexVerdict } from "@agent-loop/shared/types";
+import { agentEnv } from "./gate-env.js";
 import { buildReviewPrompt } from "./review-policy.js";
 import type { CodexUsage, Reviewer, VerifyRequest, VerifyResult } from "./types.js";
 
@@ -17,7 +18,8 @@ function runCodex(
   opts: { cwd: string; timeoutMs: number; maxBuffer: number; input: string }
 ): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const child = spawn("codex", args, { cwd: opts.cwd, stdio: ["pipe", "pipe", "pipe"] });
+    // Reviews model-generated diffs — strip our secrets from its env (gate-env).
+    const child = spawn("codex", args, { cwd: opts.cwd, env: agentEnv(), stdio: ["pipe", "pipe", "pipe"] });
     child.stdin.on("error", () => {}); // child may exit before we finish writing
     child.stdin.write(opts.input);
     child.stdin.end();

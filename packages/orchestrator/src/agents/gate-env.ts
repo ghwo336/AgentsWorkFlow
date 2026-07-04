@@ -23,3 +23,23 @@ export function gateEnv(): NodeJS.ProcessEnv {
   }
   return env;
 }
+
+// The agent CLIs (claude/codex/grok) run MODEL-CONTROLLED work — a prompt-injected
+// research session or poisoned repo can make them print their environment. Unlike
+// the gates they need most of our env (HOME for their auth files, PATH, locale…),
+// so instead of an allowlist we strip only OUR secrets: nothing an agent does
+// should ever see the orchestrator token, dashboard password, or DB URL.
+const STRIP = [
+  "ORCH_TOKEN",
+  "DASHBOARD_PASSWORD",
+  "DASHBOARD_USERNAME",
+  "DATABASE_URL",
+];
+
+export function agentEnv(): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value !== undefined && !STRIP.includes(key)) env[key] = value;
+  }
+  return env;
+}

@@ -1,6 +1,7 @@
-import { query, type CanUseTool } from "@anthropic-ai/claude-agent-sdk";
+import { runClaude } from "./claude-sdk.js";
 import { withHarness } from "./harness.js";
 import { assignSystem, parsePlanOutput, STEPS_SYSTEM, teamSystem } from "./plan-format.js";
+import { learnedBlock } from "./research-shared.js";
 import { workspaceGuard } from "./workspace-guard.js";
 import type { PhaseReporter } from "../reporter.js";
 import type {
@@ -11,12 +12,10 @@ import type {
   PlanRequest,
   Planner,
   PlanResult,
-  Researcher,
-  ResearchRequest,
-  ResearchResult,
 } from "./types.js";
 
-type ClaudePhase = "plan" | "build" | "research";
+// Claude PLAN/BUILD personas (호재 + 개발자들). The SDK transport lives in
+// claude-sdk.ts; the research persona (예림) in claude-researcher.ts.
 
 // A boundary reminder injected into the prompt (belt-and-braces with the
 // workspace-guard, which enforces this): the workspace IS the project root; if
@@ -31,144 +30,6 @@ function workspaceRule(cwd: string): string {
     `- 이 폴더가 비어 있으면 정상입니다 — 요청받은 것을 여기서 처음부터 새로 만드세요(scaffold).`,
     `- 바깥에 기존 저장소가 보여도 그것을 수정 대상으로 삼지 마세요.`,
   ].join("\n");
-}
-
-// 팀 학습 노트 프롬프트 블록 — learn-store가 렌더링한 교훈 불릿을 싣는다.
-// 교훈은 전부 [조건] 접두를 달고 있으므로, 조건이 맞을 때만 따르라고 명시한다.
-// (grok-agent 등 다른 엔진 어댑터도 같은 블록을 쓴다 — export.)
-export function learnedBlock(learned: string | undefined): string {
-  if (!learned) return "";
-  return [
-    `# 팀 학습 노트 (과거 run에서 배운 것 — 각 항목의 [조건]이 이 작업에 해당할 때만 적용)`,
-    learned,
-  ].join("\n");
-}
-
-// Stream a Claude Agent SDK query, forwarding text + tool activity to the run
-// timeline (via the reporter), and return the final assistant text.
-async function runClaude(
-  reporter: PhaseReporter,
-  phase: ClaudePhase,
-  model: string,
-  prompt: string,
-  opts: {
-    cwd?: string;
-    permissionMode: "plan" | "bypassPermissions" | "default" | "acceptEdits";
-    systemPrompt?: string;
-    disallowedTools?: string[];
-    canUseTool?: CanUseTool;
-  }
-): Promise<AgentResult> {
-  const label = phase === "build" ? "sonnet" : "opus"; // plan/research 모두 Opus 기본
-  let finalText = "";
-  let isError = false;
-
-  const response = query({
-    prompt,
-    options: {
-      model,
-      cwd: opts.cwd,
-      permissionMode: opts.permissionMode,
-      // Required by the SDK to actually bypass prompts in the build phase.
-      ...(opts.permissionMode === "bypassPermissions"
-        ? { allowDangerouslySkipPermissions: true }
-        : {}),
-      ...(opts.canUseTool ? { canUseTool: opts.canUseTool } : {}),
-      ...(opts.disallowedTools ? { disallowedTools: opts.disallowedTools } : {}),
-      ...(opts.systemPrompt
-        ? { systemPrompt: { type: "preset", preset: "claude_code", append: opts.systemPrompt } }
-        : {}),
-    },
-  });
-
-  for await (const msg of response as AsyncIterable<any>) {
-    if (msg.type === "assistant") {
-      for (const block of msg.message?.content ?? []) {
-        if (block.type === "text" && block.text.trim()) {
-          finalText = block.text;
-          await reporter.log(phase, block.text.trim(), { model: label });
-        } else if (block.type === "tool_use") {
-          const summary = summarizeTool(block.name, block.input);
-          await reporter.log(phase, `🔧 ${summary}`, { model: label });
-        }
-      }
-    } else if (msg.type === "result") {
-      if (msg.subtype !== "success") {
-        isError = true;
-        await reporter.log(phase, `Claude 실행이 비정상 종료됨: ${msg.subtype}`, {
-          level: "error",
-          model: label,
-        });
-      }
-      if (typeof msg.result === "string" && msg.result.trim()) {
-        finalText = msg.result;
-      }
-      await recordClaudeUsage(reporter, phase, model, msg);
-    }
-  }
-
-  return { text: finalText.trim(), isError };
-}
-
-// Pull token usage out of the SDK's final `result` message and persist it.
-// Prefer per-model breakdown (`modelUsage`) so subagents on other models are
-// attributed correctly; fall back to the aggregate `usage` keyed to the
-// requested model.
-async function recordClaudeUsage(
-  reporter: PhaseReporter,
-  phase: ClaudePhase,
-  model: string,
-  msg: any
-): Promise<void> {
-  const modelUsage = msg?.modelUsage;
-  if (modelUsage && typeof modelUsage === "object") {
-    for (const [m, u] of Object.entries<any>(modelUsage)) {
-      await reporter.usage({
-        engine: "claude",
-        model: m,
-        phase,
-        inputTokens: num(u?.inputTokens),
-        outputTokens: num(u?.outputTokens),
-        cacheRead: num(u?.cacheReadInputTokens),
-        cacheWrite: num(u?.cacheCreationInputTokens),
-      });
-    }
-    return;
-  }
-  const u = msg?.usage;
-  if (u && typeof u === "object") {
-    await reporter.usage({
-      engine: "claude",
-      model,
-      phase,
-      inputTokens: num(u.input_tokens),
-      outputTokens: num(u.output_tokens),
-      cacheRead: num(u.cache_read_input_tokens),
-      cacheWrite: num(u.cache_creation_input_tokens),
-    });
-  }
-}
-
-function num(v: unknown): number {
-  return typeof v === "number" && Number.isFinite(v) ? v : 0;
-}
-
-function summarizeTool(name: string, input: any): string {
-  switch (name) {
-    case "Edit":
-    case "Write":
-      return `${name} ${input?.file_path ?? ""}`;
-    case "Bash":
-      return `Bash: ${(input?.command ?? "").slice(0, 120)}`;
-    case "Read":
-      return `Read ${input?.file_path ?? ""}`;
-    case "WebSearch":
-      return `웹 검색: ${(input?.query ?? "").slice(0, 120)}`;
-    case "WebFetch":
-      return `웹 페이지 읽기: ${(input?.url ?? "").slice(0, 160)}`;
-    default:
-      return name;
-  }
 }
 
 // General planning behavior only — the machine-readable output format (```steps
@@ -363,114 +224,5 @@ export class ClaudeBuilder implements Builder {
       // No roaming subagents — keep the builder in its own workspace.
       disallowedTools: ["Task"],
     });
-  }
-}
-
-const RESEARCH_SYSTEM = `You are the WEB RESEARCH agent (리서처) in an agent team.
-Your job is INVESTIGATION, not coding: answer the user's research question by
-searching the web (WebSearch) and reading sources (WebFetch), then write a
-report. You never modify code or files.
-
-Division of labor: a teammate (상현, Grok) covers X/Twitter with live X search —
-X is behind a login wall you cannot see into, so do NOT try to browse X posts.
-Your ground is everything else: official docs, Google, Reddit, papers, tech
-media, project blogs.
-
-Method:
-  - Break the question into the claims/subtopics that must be answered.
-  - Search multiple angles; don't stop at the first result. Prefer primary
-    sources (official docs, papers, announcements) over blog hearsay.
-  - Cross-check important claims across at least two independent sources; note
-    disagreements instead of papering over them.
-  - Distinguish facts (with source) from your own inference/opinion.
-
-CRITICAL: The ENTIRE report MUST be in your final response message, inline, as
-markdown. Do NOT save it to a file. The report is what the user reads.
-
-Report shape (markdown, in Korean):
-  1) **요약** — 3~5문장 핵심 답.
-  2) 본문 — 소제목으로 구조화, 근거와 함께.
-  3) **출처** — 참조한 URL 목록 (제목 + 링크).
-
-Self-improvement (optional): if this investigation taught you a durable lesson
-about HOW to research — a source-quality finding ("X류 질문은 공식 문서가 뉴스보다
-정확했다") or a method finding ("스니펫만 믿지 말고 원문을 읽어야 했다") — append
-it AFTER the report as a fenced block. METHOD lessons only, never world knowledge
-(facts go stale; method does not). No lesson learned = omit the block entirely.
-\`\`\`lessons
-[{"condition": "언제 적용되는가", "lesson": "...", "evidence": "이번 조사의 어떤 경험에서"}]
-\`\`\`
-
-IMPORTANT: Write all prose in Korean (한국어). Keep technical terms, code
-identifiers, product names, and URLs in their original form.`;
-
-// 리서처 출력에서 ```lessons 블록을 떼어낸다 — 보고서 본문(사용자가 읽는 것)과
-// 교훈 후보(제안함으로 가는 것)를 분리. 파싱 실패는 교훈 없음으로 취급한다.
-export function splitResearchLessons(text: string): {
-  report: string;
-  lessons: Array<{ condition: string; lesson: string; evidence: string }>;
-} {
-  const m = text.match(/```lessons\s*([\s\S]*?)```/);
-  if (!m) return { report: text, lessons: [] };
-  const report = text.replace(m[0], "").trim();
-  try {
-    const arr = JSON.parse(m[1]);
-    const lessons = (Array.isArray(arr) ? arr : [])
-      .filter(
-        (v: any) =>
-          typeof v?.condition === "string" && typeof v?.lesson === "string" && typeof v?.evidence === "string"
-      )
-      .slice(0, 2);
-    return { report, lessons };
-  } catch {
-    return { report, lessons: [] };
-  }
-}
-
-// Claude research agent (예림): web-search driven investigation that ends in
-// an inline Korean report. Read-only — the run has no diff, no commit; the
-// report itself is the deliverable. Personal harness: agents-config/yerim.md.
-// (X 전담 동료는 GrokResearcher(상현) — grok-agent.ts.)
-export class ClaudeResearcher implements Researcher {
-  constructor(
-    private readonly model: string,
-    private readonly harness?: string
-  ) {}
-
-  async research(req: ResearchRequest, reporter: PhaseReporter): Promise<ResearchResult> {
-    // 후속 질문이면 지금까지의 스레드를 맥락으로 싣는다 — 각 턴은 길이 상한을
-    // 두고(보고서가 길다), 최근 턴 위주로 자른다.
-    const historyBlock = req.history?.length
-      ? [
-          `# 지금까지의 리서치 대화 (맥락 — 이미 답한 내용은 반복하지 말 것)`,
-          ...req.history
-            .slice(-8)
-            .map((t) => `${t.role === "user" ? "[질문]" : "[상현의 보고서]"}\n${t.text.slice(0, 4000)}`),
-        ].join("\n\n")
-      : "";
-    const prompt = [
-      learnedBlock(req.learned),
-      historyBlock,
-      req.history?.length ? `# 후속 질문` : `# 리서치 질문`,
-      req.question,
-      ``,
-      req.history?.length
-        ? `위 대화에 이어지는 후속 질문입니다. 필요한 부분만 새로 조사해서 후속 질문에 답하는 보고서를 작성하세요 — 이전 보고서 내용은 참조만 하고 다시 쓰지 마세요. 보고서 전문을 마지막 응답 메시지에 그대로 담으세요.`
-        : `웹을 조사해서 위 질문에 대한 보고서를 작성하세요. 보고서 전문을 마지막 응답 메시지에 그대로 담으세요.`,
-    ]
-      .filter(Boolean)
-      .join("\n");
-    const result = await runClaude(reporter, "research", this.model, prompt, {
-      cwd: req.cwd,
-      // 읽기 전용: 파일 수정 없이 조사만 한다. 웹 도구는 plan 모드에서도 동작.
-      permissionMode: "plan",
-      systemPrompt: withHarness(RESEARCH_SYSTEM, this.harness, "예림"),
-      canUseTool: workspaceGuard(req.cwd),
-      disallowedTools: ["Write", "Edit", "MultiEdit", "NotebookEdit", "Task"],
-    });
-    // Parse the fenced lessons HERE — the block format is this adapter's contract
-    // with its prompt (plan-format.ts와 같은 원칙); callers get structure only.
-    const { report, lessons } = splitResearchLessons(result.text);
-    return { text: report, isError: result.isError, lessons };
   }
 }

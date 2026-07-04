@@ -174,32 +174,38 @@ export function registerDataRoutes(app: FastifyInstance): void {
   });
 
   // Project launcher summary: per-project run counts, last status, total cost.
+  // 집계는 DB에 맡긴다(groupBy / distinct 최신 1건) — run 이력이 쌓여도 홈 진입이
+  // 전체 run 테이블을 프로젝트마다 다시 훑지 않도록. 비용만은 usage→run(project)
+  // 관계 groupBy가 없어 최소 컬럼으로 받아 한 번에 합산한다.
   app.get("/data/projects", async () => {
-    const [projects, runs, usages] = await Promise.all([
-      prisma.project.findMany({ orderBy: { createdAt: "asc" } }),
+    const [projects, counts, latests, usages] = await Promise.all([
+      prisma.project.findMany({ orderBy: { createdAt: "asc" }, select: { name: true } }),
+      prisma.run.groupBy({ by: ["project"], _count: { _all: true } }),
       prisma.run.findMany({
-        select: { project: true, status: true, createdAt: true, title: true },
+        distinct: ["project"],
         orderBy: { createdAt: "desc" },
+        select: { project: true, status: true, createdAt: true, title: true },
       }),
       prisma.usage.findMany({ select: { costUsd: true, run: { select: { project: true } } } }),
     ]);
 
+    const countBy = new Map(counts.map((c) => [c.project, c._count._all]));
+    const latestBy = new Map(latests.map((r) => [r.project, r]));
+    const costBy = new Map<string, number>();
+    for (const u of usages) costBy.set(u.run.project, (costBy.get(u.run.project) ?? 0) + u.costUsd);
+
     const names = new Set(projects.map((p) => p.name));
-    for (const r of runs) names.add(r.project);
+    for (const c of counts) names.add(c.project);
 
     const summary = [...names].map((name) => {
-      const projRuns = runs.filter((r) => r.project === name);
-      const cost = usages
-        .filter((u) => u.run.project === name)
-        .reduce((acc, u) => acc + u.costUsd, 0);
-      const latest = projRuns[0];
+      const latest = latestBy.get(name);
       return {
         name,
-        runCount: projRuns.length,
+        runCount: countBy.get(name) ?? 0,
         lastStatus: latest?.status ?? null,
         lastTitle: latest?.title ?? null,
         lastAt: latest?.createdAt ?? null,
-        costUsd: cost,
+        costUsd: costBy.get(name) ?? 0,
       };
     });
     summary.sort((a, b) => {

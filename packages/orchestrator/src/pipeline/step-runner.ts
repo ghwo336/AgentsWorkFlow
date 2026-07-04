@@ -239,7 +239,7 @@ async function runStepRound(
   ctx: StepCtx,
   opts: { seedFeedback?: string; attemptOffset: number; previousFailures?: string[] }
 ): Promise<{ passed: boolean; lastStepId: string; sha: string; feedback?: string; failures: string[] }> {
-  const { git, store, config } = deps;
+  const { git, config } = deps;
   // 검증자 0명이어도 빌드 게이트는 강제 — "리뷰 생략"이 "빌드도 안 해보고 커밋"이
   // 되지 않도록 (검증 생략은 LLM 리뷰에만 해당한다).
   const reviewers = reviewersFor(deps, ctx.roster, { ensureBuildGate: true });
@@ -345,50 +345,12 @@ async function runStepRound(
         : reviews.every((r) => r.result.passed));
     const lastReviewStepId = reviews[reviews.length - 1]?.stepId ?? buildStep.id;
 
-    // 💬 each reviewer replies to the builder with its verdict (team chat).
-    // The reviewer's identity key (name: 품질/보안/통합/빌드) rides in `engine`
-    // so the dashboard seats the turn with the right teammate — two codex
-    // reviewers share an engine, so engine alone is ambiguous.
-    for (const r of reviews) {
-      await reporter.chat({
-        role: "verify",
-        attempt,
-        kind: "verify",
-        toRole: "build",
-        stepLabel: tag,
-        passed: r.result.passed,
-        engine: r.reviewer.name,
-        agent: REVIEWER_AGENT_ID[r.reviewer.name],
-        text: r.result.reason,
-      });
-    }
+    await notifyVerdicts(reporter, reviews, attempt, tag);
 
     // ④ COMMIT this step (on PASS) and move on.
     if (passed) {
-      const commitStep = await reporter.startStep({
-        kind: "commit",
-        label: `${tag} · 커밋`,
-        parentId: lastReviewStepId,
-        attempt,
-        orderIdx: order(),
-      });
-      const title = (await store.getTitle(ctx.runId)) ?? "agent-loop change";
-      const reviewerNames = reviews.map((r) => r.reviewer.name).join(", ");
-      const message = `${title} — ${tag}\n\n${ctx.description}\n\nVerified by ${reviewerNames} (attempt ${attempt}).`;
-      const sha = await git.commitAll(targetDir, message);
-      await commitStep.finish("passed", `${tag} 검증 통과 후 ${sha.slice(0, 10)} 커밋.`);
-      await reporter.log(
-        "commit",
-        `${tag} 커밋 ${sha.slice(0, 10)} ✅ (${reviewerNames} 통과, ${attempt}번째 시도)`
-      );
-      await reporter.chat({
-        role: "system",
-        attempt,
-        kind: "commit",
-        stepLabel: tag,
-        text: `${reviewerNames} 통과 → ${sha.slice(0, 10)} 커밋 완료.`,
-      });
-      return { passed: true, lastStepId: commitStep.id, sha, failures };
+      const committed = await commitStep(deps, ctx, { reviews, attempt, parentId: lastReviewStepId });
+      return { passed: true, lastStepId: committed.stepId, sha: committed.sha, failures };
     }
 
     // Feed every failing reviewer's reason back into the next attempt.
@@ -401,4 +363,64 @@ async function runStepRound(
   }
 
   return { passed: false, lastStepId: parentId, sha: "", feedback, failures };
+}
+
+// 💬 each reviewer replies to the builder with its verdict (team chat).
+// The reviewer's identity key (name: 품질/보안/통합/빌드) rides in `engine`
+// so the dashboard seats the turn with the right teammate — two codex
+// reviewers share an engine, so engine alone is ambiguous.
+async function notifyVerdicts(
+  reporter: RunReporter,
+  reviews: ReviewOutcome[],
+  attempt: number,
+  tag: string
+): Promise<void> {
+  for (const r of reviews) {
+    await reporter.chat({
+      role: "verify",
+      attempt,
+      kind: "verify",
+      toRole: "build",
+      stepLabel: tag,
+      passed: r.result.passed,
+      engine: r.reviewer.name,
+      agent: REVIEWER_AGENT_ID[r.reviewer.name],
+      text: r.result.reason,
+    });
+  }
+}
+
+// Commit a verified step: commit node + git commit + timeline log + team chat.
+async function commitStep(
+  deps: PipelineDeps,
+  ctx: StepCtx,
+  args: { reviews: ReviewOutcome[]; attempt: number; parentId: string }
+): Promise<{ stepId: string; sha: string }> {
+  const { git, store } = deps;
+  const { reporter, targetDir, order } = ctx;
+  const tag = `단계 ${ctx.index}/${ctx.total}`;
+  const step = await reporter.startStep({
+    kind: "commit",
+    label: `${tag} · 커밋`,
+    parentId: args.parentId,
+    attempt: args.attempt,
+    orderIdx: order(),
+  });
+  const title = (await store.getTitle(ctx.runId)) ?? "agent-loop change";
+  const reviewerNames = args.reviews.map((r) => r.reviewer.name).join(", ");
+  const message = `${title} — ${tag}\n\n${ctx.description}\n\nVerified by ${reviewerNames} (attempt ${args.attempt}).`;
+  const sha = await git.commitAll(targetDir, message);
+  await step.finish("passed", `${tag} 검증 통과 후 ${sha.slice(0, 10)} 커밋.`);
+  await reporter.log(
+    "commit",
+    `${tag} 커밋 ${sha.slice(0, 10)} ✅ (${reviewerNames} 통과, ${args.attempt}번째 시도)`
+  );
+  await reporter.chat({
+    role: "system",
+    attempt: args.attempt,
+    kind: "commit",
+    stepLabel: tag,
+    text: `${reviewerNames} 통과 → ${sha.slice(0, 10)} 커밋 완료.`,
+  });
+  return { stepId: step.id, sha };
 }

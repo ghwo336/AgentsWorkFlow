@@ -1,4 +1,5 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import { agentEnv } from "./gate-env.js";
 
 // Minimal Claude SDK call for NON-streaming consumers: run the query, return
 // the final assistant text (+ token usage). The 4 copies of this for-await loop
@@ -19,7 +20,8 @@ export async function queryFinalText(
 ): Promise<{ text: string; usage?: FinalTextUsage }> {
   let finalText = "";
   let usage: FinalTextUsage | undefined;
-  const response = query({ prompt, options });
+  // Keep the orchestrator's own secrets out of the CLI subprocess (gate-env).
+  const response = query({ prompt, options: { env: agentEnv(), ...options } });
   for await (const msg of response as AsyncIterable<any>) {
     if (msg.type === "assistant") {
       for (const block of msg.message?.content ?? []) {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { splitResearchLessons } from "./claude-agent.js";
+import { splitResearchLessons } from "./research-shared.js";
 import { parseReflectOutput } from "./reflector.js";
 
 // 학습 루프의 LLM 출력 파서들 — 모델 출력은 계약을 어길 수 있으므로, 어긋난
