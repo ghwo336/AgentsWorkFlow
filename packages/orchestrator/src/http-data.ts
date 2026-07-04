@@ -86,6 +86,7 @@ export function registerDataRoutes(app: FastifyInstance): void {
         commit: true,
         error: true,
         targetDir: true,
+        folderId: true,
         createdAt: true,
       },
     });
@@ -224,6 +225,53 @@ export function registerDataRoutes(app: FastifyInstance): void {
     const project = await prisma.project.findUnique({ where: { name } });
     if (!project) return reply.code(404).send({ error: "not found" });
     return project;
+  });
+
+  // Research folders — user-created groups for research runs ("블록체인" 등).
+  // Folders are first-class rows (can exist empty); runCount is derived.
+  app.get("/data/research-folders", async () => {
+    const folders = await prisma.researchFolder.findMany({
+      orderBy: { createdAt: "asc" },
+      include: { _count: { select: { runs: true } } },
+    });
+    return folders.map(({ _count, ...f }) => ({ ...f, runCount: _count.runs }));
+  });
+
+  app.post("/data/research-folders", async (req, reply) => {
+    const body = (req.body as { name?: string }) ?? {};
+    const name = typeof body.name === "string" ? body.name.trim() : "";
+    if (!name) return reply.code(400).send({ error: "name required" });
+    const folder = await prisma.researchFolder.upsert({
+      where: { name },
+      create: { name },
+      update: {},
+    });
+    return reply.code(201).send(folder);
+  });
+
+  // Delete a folder — its runs return to 미분류 (folderId → null via SetNull).
+  app.delete("/data/research-folders/:id", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const found = await prisma.researchFolder.findUnique({ where: { id } });
+    if (!found) return reply.code(404).send({ error: "not found" });
+    await prisma.researchFolder.delete({ where: { id } });
+    return { ok: true };
+  });
+
+  // Move a run into a folder (folderId: null = 미분류로 꺼내기).
+  app.patch("/data/runs/:id/folder", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = (req.body as { folderId?: string | null }) ?? {};
+    const folderId = typeof body.folderId === "string" ? body.folderId : null;
+    if (folderId) {
+      const folder = await prisma.researchFolder.findUnique({ where: { id: folderId } });
+      if (!folder) return reply.code(404).send({ error: "folder not found" });
+    }
+    try {
+      return await prisma.run.update({ where: { id }, data: { folderId } });
+    } catch {
+      return reply.code(404).send({ error: "run not found" });
+    }
   });
 
   // Update a project's default working dir (empty string clears it).

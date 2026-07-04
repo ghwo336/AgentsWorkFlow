@@ -4,13 +4,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { agentById, PixelAvatar, RESEARCH_PROJECT, ROLE_COLOR } from "../lib/agents";
 import { api } from "../lib/api";
 import { Markdown } from "../lib/Markdown";
-import type { Run, RunDetail } from "../lib/types";
+import type { ResearchFolder, Run, RunDetail } from "../lib/types";
 
 // 홈의 🔍 리서치 탭 — 리서치 하나가 "탭 하나 = 대화 스레드 하나"다. 질문을
 // 제출하면 리서치 팀 run이 생기고 — 상현(Grok)이 X를, 예림(Claude)이 웹을
 // 동시에 조사해 보고서 두 개가 나란히 온다 — 보고서가 나온 뒤에도(reported)
 // 같은 탭에서 후속 질문을 이어갈 수 있다. 스레드 본문은 run의 팀 채팅
 // (user 질문 ↔ research 보고서, 화자는 msg.agent)으로 그린다.
+//
+// 폴더: 사용자가 만든 그룹(예: "블록체인")으로 리서치들을 묶는다. 위 줄이
+// 폴더 칩(📂 전체 / 📁 각 폴더 / ＋ 새 폴더), 아래 줄이 선택된 폴더 안의
+// 리서치 탭. 폴더를 고른 채 새 리서치를 시작하면 그 폴더로 자동 분류되고,
+// 스레드 안의 드롭다운으로 언제든 다른 폴더로 옮길 수 있다.
 
 const X_RESEARCHER = "sanghyun"; // 상현 (Grok — X 실시간)
 const WEB_RESEARCHER = "yerim"; // 예림 (Claude — 웹 전반)
@@ -32,14 +37,23 @@ const isRunning = (s: string) => s === "researching" || s === "planning";
 // 때마다 목록과 열려 있는 스레드를 다시 읽는다 (EventSource는 부모 것 하나만 사용).
 export function ResearchTab({ refreshKey }: { refreshKey: number }) {
   const [runs, setRuns] = useState<Run[]>([]);
+  const [folders, setFolders] = useState<ResearchFolder[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // null = 📂 전체 (미분류 포함 모든 리서치).
+  const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
   // null = "＋ 새 리서치" 탭.
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [newFolderOpen, setNewFolderOpen] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
 
   const load = useCallback(async () => {
     try {
-      const rows = await api.listRuns(RESEARCH_PROJECT);
+      const [rows, fs] = await Promise.all([
+        api.listRuns(RESEARCH_PROJECT),
+        api.listResearchFolders(),
+      ]);
       setRuns(rows);
+      setFolders(fs);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "리서치 목록 로드 실패");
@@ -50,8 +64,111 @@ export function ResearchTab({ refreshKey }: { refreshKey: number }) {
     load();
   }, [load, refreshKey]);
 
+  const activeFolder = folders.find((f) => f.id === activeFolderId) ?? null;
+  // 지워진 폴더를 보고 있었다면 전체로 복귀.
+  if (activeFolderId && folders.length && !activeFolder) setActiveFolderId(null);
+  const visibleRuns = activeFolderId ? runs.filter((r) => r.folderId === activeFolderId) : runs;
+
+  function openFolder(folderId: string | null) {
+    setActiveFolderId(folderId);
+    setActiveId(null); // 폴더를 옮기면 그 폴더의 "＋ 새 리서치"부터
+  }
+
+  async function createFolder(e: React.FormEvent) {
+    e.preventDefault();
+    const name = newFolderName.trim();
+    if (!name) return;
+    try {
+      const folder = await api.createResearchFolder(name);
+      setNewFolderName("");
+      setNewFolderOpen(false);
+      await load();
+      openFolder(folder.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "폴더 생성 실패");
+    }
+  }
+
+  async function deleteFolder(folder: ResearchFolder) {
+    const inside = runs.filter((r) => r.folderId === folder.id).length;
+    const ok = window.confirm(
+      inside > 0
+        ? `'${folder.name}' 폴더를 삭제할까요? 안의 리서치 ${inside}개는 지워지지 않고 미분류로 돌아가요.`
+        : `'${folder.name}' 폴더를 삭제할까요?`
+    );
+    if (!ok) return;
+    try {
+      await api.deleteResearchFolder(folder.id);
+      openFolder(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "폴더 삭제 실패");
+    }
+  }
+
   return (
     <>
+      {/* 폴더 줄 — 전체 / 각 폴더 / ＋ 새 폴더 */}
+      <div className="viz-tabs" style={{ marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <button
+          type="button"
+          className={`viz-tab${activeFolderId === null ? " active" : ""}`}
+          onClick={() => openFolder(null)}
+        >
+          📂 전체 ({runs.length})
+        </button>
+        {folders.map((f) => (
+          <button
+            key={f.id}
+            type="button"
+            className={`viz-tab${activeFolderId === f.id ? " active" : ""}`}
+            onClick={() => openFolder(f.id)}
+            title={f.name}
+          >
+            📁 {f.name} ({f.runCount})
+          </button>
+        ))}
+        {newFolderOpen ? (
+          <form onSubmit={createFolder} className="row" style={{ gap: 6, alignItems: "center" }}>
+            <input
+              autoFocus
+              placeholder="폴더 이름 (예: 블록체인)"
+              value={newFolderName}
+              onChange={(e) => setNewFolderName(e.target.value)}
+              style={{ width: 180 }}
+            />
+            <button type="submit" disabled={!newFolderName.trim()}>
+              만들기
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setNewFolderOpen(false);
+                setNewFolderName("");
+              }}
+            >
+              취소
+            </button>
+          </form>
+        ) : (
+          <button type="button" className="viz-tab" onClick={() => setNewFolderOpen(true)}>
+            ＋ 새 폴더
+          </button>
+        )}
+        {activeFolder && (
+          <button
+            type="button"
+            className="viz-tab"
+            style={{ marginLeft: "auto", color: "var(--red)" }}
+            onClick={() => deleteFolder(activeFolder)}
+            title="폴더만 삭제돼요 — 안의 리서치는 미분류로 돌아가요"
+          >
+            🗑 폴더 삭제
+          </button>
+        )}
+      </div>
+
+      {/* 리서치 줄 — 선택된 폴더 안의 스레드 탭 */}
       <div className="viz-tabs" style={{ marginBottom: 12, flexWrap: "wrap" }}>
         <button
           type="button"
@@ -60,7 +177,7 @@ export function ResearchTab({ refreshKey }: { refreshKey: number }) {
         >
           ＋ 새 리서치
         </button>
-        {runs.map((r) => (
+        {visibleRuns.map((r) => (
           <button
             key={r.id}
             type="button"
@@ -72,6 +189,11 @@ export function ResearchTab({ refreshKey }: { refreshKey: number }) {
             {r.title.length > 18 ? `${r.title.slice(0, 18)}…` : r.title}
           </button>
         ))}
+        {activeFolderId && visibleRuns.length === 0 && (
+          <span className="muted small" style={{ alignSelf: "center" }}>
+            이 폴더는 아직 비어 있어요 — 새 리서치를 시작하거나 스레드에서 옮겨 담아 보세요.
+          </span>
+        )}
       </div>
 
       {error && (
@@ -82,19 +204,34 @@ export function ResearchTab({ refreshKey }: { refreshKey: number }) {
 
       {activeId === null ? (
         <NewResearchForm
+          folder={activeFolder}
           onStarted={(id) => {
             setActiveId(id);
             load();
           }}
         />
       ) : (
-        <ResearchThread id={activeId} refreshKey={refreshKey} />
+        <ResearchThread
+          id={activeId}
+          refreshKey={refreshKey}
+          folders={folders}
+          onMoved={(folderId) => {
+            setActiveFolderId(folderId);
+            load();
+          }}
+        />
       )}
     </>
   );
 }
 
-function NewResearchForm({ onStarted }: { onStarted: (id: string) => void }) {
+function NewResearchForm({
+  folder,
+  onStarted,
+}: {
+  folder: ResearchFolder | null; // 선택돼 있으면 새 리서치를 이 폴더로 자동 분류
+  onStarted: (id: string) => void;
+}) {
   const [question, setQuestion] = useState("");
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -112,6 +249,9 @@ function NewResearchForm({ onStarted }: { onStarted: (id: string) => void }) {
         brief: q,
         agents: RESEARCH_SEATS,
       });
+      // 폴더를 보고 있었다면 그 폴더로 분류 — 실패해도 리서치는 시작됐으므로
+      // 막지 않는다 (미분류로 남을 뿐, 스레드에서 옮기면 된다).
+      if (folder) await api.setRunFolder(id, folder.id).catch(() => {});
       setQuestion("");
       onStarted(id);
     } catch (err) {
@@ -127,10 +267,11 @@ function NewResearchForm({ onStarted }: { onStarted: (id: string) => void }) {
         <PixelAvatar agent={agentById(X_RESEARCHER)} size={40} />
         <PixelAvatar agent={agentById(WEB_RESEARCHER)} size={40} />
         <div>
-          <b className="pixel">🔍 새 리서치</b>
+          <b className="pixel">🔍 새 리서치{folder ? ` — 📁 ${folder.name}` : ""}</b>
           <div className="muted small" style={{ marginTop: 2 }}>
             상현(X 실시간)과 예림(웹 전반)이 동시에 조사해서 보고서 두 개로 답해요. 보고서가 나온
             뒤에도 같은 탭에서 계속 물어볼 수 있어요.
+            {folder ? ` 이 리서치는 '${folder.name}' 폴더에 담겨요.` : ""}
           </div>
         </div>
       </div>
@@ -152,10 +293,21 @@ function NewResearchForm({ onStarted }: { onStarted: (id: string) => void }) {
 
 // 리서치 스레드 하나 — 대화(질문↔보고서) + 후속 질문 입력. 첫 말풍선은
 // run.brief(최초 질문), 이후는 팀 채팅의 user/research 턴.
-function ResearchThread({ id, refreshKey }: { id: string; refreshKey: number }) {
+function ResearchThread({
+  id,
+  refreshKey,
+  folders,
+  onMoved,
+}: {
+  id: string;
+  refreshKey: number;
+  folders: ResearchFolder[];
+  onMoved: (folderId: string | null) => void; // 이동 후 부모가 그 폴더로 따라간다
+}) {
   const [detail, setDetail] = useState<RunDetail | null>(null);
   const [question, setQuestion] = useState("");
   const [sending, setSending] = useState(false);
+  const [moving, setMoving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // 탭 전환 시 이전 스레드가 잠깐 비치지 않도록 id가 바뀌면 즉시 비운다.
   const shownId = useRef(id);
@@ -202,6 +354,21 @@ function ResearchThread({ id, refreshKey }: { id: string; refreshKey: number }) 
     }
   }
 
+  async function moveToFolder(folderId: string | null) {
+    if (moving) return;
+    setMoving(true);
+    try {
+      await api.setRunFolder(id, folderId);
+      setError(null);
+      await load();
+      onMoved(folderId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "폴더 이동 실패");
+    } finally {
+      setMoving(false);
+    }
+  }
+
   return (
     <div className="panel">
       <div className="row spread" style={{ alignItems: "flex-start" }}>
@@ -210,7 +377,22 @@ function ResearchThread({ id, refreshKey }: { id: string; refreshKey: number }) 
           <PixelAvatar agent={agentById(WEB_RESEARCHER)} size={22} active={running} />
           <span style={{ color: ROLE_COLOR.research }}>{detail.title}</span>
         </b>
-        <span className={`badge b-${detail.status}`}>{statusLabel(detail.status)}</span>
+        <span className="row" style={{ gap: 8, alignItems: "center" }}>
+          <select
+            value={detail.folderId ?? ""}
+            disabled={moving}
+            onChange={(e) => moveToFolder(e.target.value || null)}
+            title="이 리서치를 담을 폴더"
+          >
+            <option value="">📂 미분류</option>
+            {folders.map((f) => (
+              <option key={f.id} value={f.id}>
+                📁 {f.name}
+              </option>
+            ))}
+          </select>
+          <span className={`badge b-${detail.status}`}>{statusLabel(detail.status)}</span>
+        </span>
       </div>
 
       {/* 보고서가 길다 — 공용 chat-thread의 280px 상한을 스레드용으로 늘린다 */}

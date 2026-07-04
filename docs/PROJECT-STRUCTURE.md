@@ -151,7 +151,7 @@ app/
 ├── page.tsx                      # 홈 (SSR 목록 → HomeClient)
 ├── _components/
 │   ├── HomeClient.tsx            # 홈 탭: 📁 프로젝트 / 🔍 리서치 / 👋 팀 소개
-│   ├── ResearchTab.tsx           # 리서치 — 탭=대화 스레드, 상현·예림 팬아웃 + 후속 질문
+│   ├── ResearchTab.tsx           # 리서치 — 탭=대화 스레드, 상현·예림 팬아웃 + 후속 질문 + 폴더 그룹핑
 │   └── TeamIntro.tsx             # 팀 소개 — 하네스·배운 교훈·교훈 제안함(승인/거절)
 ├── lib/
 │   ├── types.ts                  # 클라이언트 뷰모델 (Run에 agents/stepDevs 포함)

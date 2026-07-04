@@ -16,6 +16,16 @@ model Project {
   createdAt        DateTime @default(now())
 }
 
+/// A user-created folder that groups research runs (e.g. "블록체인").
+/// Only runs in the 리서치 project reference it; deleting a folder returns its
+/// runs to 미분류 (folderId = null) instead of deleting them.
+model ResearchFolder {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  runs      Run[]
+}
+
 /// One end-to-end task: brief -> plan -> build -> verify -> commit
 model Run {
   id        String   @id @default(cuid())
@@ -35,6 +45,9 @@ model Run {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  folderId String? // research grouping; null = 미분류 (code runs never set this)
+  folder   ResearchFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+
   events   Event[]
   verdicts Verdict[]
   usages   Usage[]
@@ -42,6 +55,7 @@ model Run {
   chatMsgs ChatMsg[]
 
   @@index([project])
+  @@index([folderId])
 }
 
 /// One agent's unit of work within a run (a "span"): plan, a single build

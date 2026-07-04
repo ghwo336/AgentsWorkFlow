@@ -20,6 +20,15 @@ export type Project = {
   createdAt: string;
 };
 
+// User-created group for research runs (e.g. "블록체인"). runCount is derived
+// server-side; folders can exist empty.
+export type ResearchFolder = {
+  id: string;
+  name: string;
+  createdAt: string;
+  runCount: number;
+};
+
 export type Run = {
   id: string;
   project: string;
@@ -39,6 +48,8 @@ export type Run = {
   commit?: string | null;
   error?: string | null;
   targetDir?: string | null;
+  // research grouping; null/undefined = 미분류 (code runs never set this)
+  folderId?: string | null;
   createdAt: string;
 };
 

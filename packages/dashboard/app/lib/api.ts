@@ -4,6 +4,7 @@ import type {
   InterventionDecision,
   Project,
   ProjectSummary,
+  ResearchFolder,
   Run,
   RunDetail,
   RunEvent,
@@ -123,6 +124,23 @@ export const api = {
       `/api/runs/${id}?eventsTake=${LOG_PAGE}&chatTake=100&verdicts=0`,
       "리서치 상세 로드 실패"
     ),
+
+  // 리서치 폴더 — 사용자가 만든 그룹(예: "블록체인")으로 리서치들을 묶는다.
+  listResearchFolders: () =>
+    getJson<ResearchFolder[]>("/api/research-folders", "리서치 폴더 로드 실패"),
+
+  createResearchFolder: (name: string) =>
+    postJson<ResearchFolder>("/api/research-folders", { name }, "폴더 생성 실패"),
+
+  // 폴더 삭제 — 안의 리서치들은 지워지지 않고 미분류로 돌아간다.
+  deleteResearchFolder: async (id: string) => {
+    const r = await fetch(`/api/research-folders/${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (!r.ok) throw new Error(`폴더 삭제 실패 (${r.status})`);
+  },
+
+  // 리서치를 폴더로 이동 (folderId: null = 미분류로 꺼내기).
+  setRunFolder: (id: string, folderId: string | null) =>
+    sendJson<Run>("PATCH", `/api/runs/${id}/folder`, { folderId }, "폴더 이동 실패"),
 
   // 리서치 후속 질문 — reported 상태의 run에 대화를 이어 붙인다.
   researchFollowUp: (id: string, question: string) =>
