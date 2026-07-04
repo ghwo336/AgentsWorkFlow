@@ -14,7 +14,7 @@ export async function sweepOrphans(): Promise<void> {
     data: { status: "failed", summary: INTERRUPTED, endedAt: new Date() },
   });
   const runs = await prisma.run.updateMany({
-    where: { status: { in: ["planning", "building", "verifying"] } },
+    where: { status: { in: ["planning", "building", "verifying", "researching"] } },
     data: {
       status: "failed",
       error: `${INTERRUPTED} — 계획이 승인된 작업은 '다시 진행'으로 멈춘 단계부터 이어집니다.`,

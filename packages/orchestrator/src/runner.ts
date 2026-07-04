@@ -1,5 +1,5 @@
 import { BuildGateReviewer } from "./agents/build-gate.js";
-import { ClaudeBuilder, ClaudePlanner } from "./agents/claude-agent.js";
+import { ClaudeBuilder, ClaudePlanner, ClaudeResearcher } from "./agents/claude-agent.js";
 import { ClaudeReviewer } from "./agents/claude-reviewer.js";
 import { CodexVerifier } from "./agents/codex-agent.js";
 import { CommandReviewer } from "./agents/command-reviewer.js";
@@ -78,6 +78,8 @@ const pipeline = new RunPipeline({
   builder: new ClaudeBuilder(config.buildModel),
   buildersById,
   reviewers,
+  // 리서처(상현) — 웹 조사 + 보고서. 하네스: agents-config/sanghyun.md.
+  researcher: new ClaudeResearcher(config.researchModel, harnessOf("sanghyun")),
   git,
   store,
   config,
@@ -132,6 +134,9 @@ export async function startRun(input: StartInput): Promise<string> {
       break;
     case "planOnly": // 기획만 — 계획서 작성 후 종료
       pipeline.planOnly(id, input.brief, targetDir, reporter).catch(onFatal(reporter));
+      break;
+    case "research": // 리서치 — 상현이 웹을 조사해 보고서 작성 후 종료
+      pipeline.research(id, input.brief, targetDir, reporter).catch(onFatal(reporter));
       break;
     case "direct": // 기획 생략 — 승인 없이 바로 구현 (검증은 선택된 만큼)
       pipeline.directBuild(id, input.brief, targetDir, reporter).catch(onFatal(reporter));
@@ -224,6 +229,13 @@ export async function retryRun(runId: string): Promise<boolean> {
   if (runModeOf(roster) === "verifyOnly") {
     await reporter.log("approval", "사용자가 프로젝트 감사를 다시 실행합니다.");
     pipeline.verifyOnly(runId, st.brief, st.targetDir, reporter, roster).catch(onFatal(reporter));
+    return true;
+  }
+
+  // 리서치 run도 재개할 빌드가 없다 — 조사를 처음부터 다시 실행.
+  if (runModeOf(roster) === "research") {
+    await reporter.log("research", "사용자가 리서치를 다시 실행합니다.");
+    pipeline.research(runId, st.brief, st.targetDir, reporter).catch(onFatal(reporter));
     return true;
   }
 

@@ -81,7 +81,7 @@ a:hover { text-decoration: underline; }
 }
 .b-committed { color: var(--green); border-color: var(--green); }
 .b-rejected, .b-failed { color: var(--red); border-color: var(--red); }
-.b-building, .b-verifying, .b-planning { color: var(--yellow); border-color: var(--yellow); }
+.b-building, .b-verifying, .b-planning, .b-researching { color: var(--yellow); border-color: var(--yellow); }
 .b-awaiting_approval { color: var(--accent); border-color: var(--accent); }
 .b-needs_input { color: var(--yellow); border-color: var(--yellow); background: rgba(255, 200, 97, .12); }
 
@@ -255,6 +255,7 @@ td, th { text-align: left; padding: 8px; border-bottom: 1px solid var(--border);
 .pixel-avatar-build.is-active { filter: drop-shadow(0 0 5px rgba(87, 217, 154, .28)); }
 .pixel-avatar-plan.is-active { filter: drop-shadow(0 0 5px rgba(91, 157, 255, .28)); }
 .pixel-avatar-verify.is-active { filter: drop-shadow(0 0 5px rgba(185, 139, 255, .28)); }
+.pixel-avatar-research.is-active { filter: drop-shadow(0 0 5px rgba(255, 180, 84, .28)); }
 
 /* Flames engulfing the body while working — flicker in place. The shell (behind)
    and the front tongues run the same loop out of phase so the fire looks alive. */

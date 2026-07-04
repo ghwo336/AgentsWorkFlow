@@ -356,6 +356,7 @@ export function TeamRoster({ activeIds }: { activeIds?: Set<string> } = {}) {
     { role: "plan", seats: seatsOf("plan") },
     { role: "build", seats: seatsOf("build") },
     { role: "verify", seats: seatsOf("verify") },
+    { role: "research", seats: seatsOf("research") },
   ];
   return (
     <div className="panel office">

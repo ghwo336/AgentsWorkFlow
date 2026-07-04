@@ -1,4 +1,4 @@
-import type { Builder, Planner, Reviewer } from "../agents/types.js";
+import type { Builder, Planner, Researcher, Reviewer } from "../agents/types.js";
 import type { GitOps } from "../git.js";
 import type { RunStore } from "../run-store.js";
 
@@ -7,6 +7,7 @@ export interface PipelineConfig {
   planModel: string;
   buildModel: string;
   codexModel: string;
+  researchModel: string;
   reviewPolicy: "all" | "any"; // commit when every / any reviewer passes
 }
 
@@ -21,6 +22,7 @@ export interface PipelineDeps {
   // 태경=프론트엔드, 민재=백엔드, 주희=iOS, 성민=Android, 연한=RN.
   buildersById?: Record<string, Builder>;
   reviewers: Reviewer[]; // fan-out: every reviewer inspects the same diff
+  researcher: Researcher; // 리서치 전용 모드 (상현)
   git: GitOps;
   store: RunStore;
   config: PipelineConfig;

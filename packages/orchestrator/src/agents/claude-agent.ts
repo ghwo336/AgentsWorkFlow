@@ -11,9 +11,11 @@ import type {
   PlanRequest,
   Planner,
   PlanResult,
+  Researcher,
+  ResearchRequest,
 } from "./types.js";
 
-type ClaudePhase = "plan" | "build";
+type ClaudePhase = "plan" | "build" | "research";
 
 // A boundary reminder injected into the prompt (belt-and-braces with the
 // workspace-guard, which enforces this): the workspace IS the project root; if
@@ -45,7 +47,7 @@ async function runClaude(
     canUseTool?: CanUseTool;
   }
 ): Promise<AgentResult> {
-  const label = phase === "plan" ? "opus" : "sonnet";
+  const label = phase === "build" ? "sonnet" : "opus"; // plan/research 모두 Opus 기본
   let finalText = "";
   let isError = false;
 
@@ -148,6 +150,10 @@ function summarizeTool(name: string, input: any): string {
       return `Bash: ${(input?.command ?? "").slice(0, 120)}`;
     case "Read":
       return `Read ${input?.file_path ?? ""}`;
+    case "WebSearch":
+      return `웹 검색: ${(input?.query ?? "").slice(0, 120)}`;
+    case "WebFetch":
+      return `웹 페이지 읽기: ${(input?.url ?? "").slice(0, 160)}`;
     default:
       return name;
   }
@@ -341,6 +347,57 @@ export class ClaudeBuilder implements Builder {
       systemPrompt: withHarness(BUILD_SYSTEM, this.harness, this.name),
       // No roaming subagents — keep the builder in its own workspace.
       disallowedTools: ["Task"],
+    });
+  }
+}
+
+const RESEARCH_SYSTEM = `You are the RESEARCH agent (리서처) in an agent team.
+Your job is INVESTIGATION, not coding: answer the user's research question by
+searching the web (WebSearch) and reading sources (WebFetch), then write a
+report. You never modify code or files.
+
+Method:
+  - Break the question into the claims/subtopics that must be answered.
+  - Search multiple angles; don't stop at the first result. Prefer primary
+    sources (official docs, papers, announcements) over blog hearsay.
+  - Cross-check important claims across at least two independent sources; note
+    disagreements instead of papering over them.
+  - Distinguish facts (with source) from your own inference/opinion.
+
+CRITICAL: The ENTIRE report MUST be in your final response message, inline, as
+markdown. Do NOT save it to a file. The report is what the user reads.
+
+Report shape (markdown, in Korean):
+  1) **요약** — 3~5문장 핵심 답.
+  2) 본문 — 소제목으로 구조화, 근거와 함께.
+  3) **출처** — 참조한 URL 목록 (제목 + 링크).
+
+IMPORTANT: Write all prose in Korean (한국어). Keep technical terms, code
+identifiers, product names, and URLs in their original form.`;
+
+// Claude research agent (상현): web-search driven investigation that ends in
+// an inline Korean report. Read-only — the run has no diff, no commit; the
+// report itself is the deliverable. Personal harness: agents-config/sanghyun.md.
+export class ClaudeResearcher implements Researcher {
+  constructor(
+    private readonly model: string,
+    private readonly harness?: string
+  ) {}
+
+  research(req: ResearchRequest, reporter: PhaseReporter): Promise<AgentResult> {
+    const prompt = [
+      `# 리서치 질문`,
+      req.question,
+      ``,
+      `웹을 조사해서 위 질문에 대한 보고서를 작성하세요. 보고서 전문을 마지막 응답 메시지에 그대로 담으세요.`,
+    ].join("\n");
+    return runClaude(reporter, "research", this.model, prompt, {
+      cwd: req.cwd,
+      // 읽기 전용: 파일 수정 없이 조사만 한다. 웹 도구는 plan 모드에서도 동작.
+      permissionMode: "plan",
+      systemPrompt: withHarness(RESEARCH_SYSTEM, this.harness, "상현"),
+      canUseTool: workspaceGuard(req.cwd),
+      disallowedTools: ["Write", "Edit", "MultiEdit", "NotebookEdit", "Task"],
     });
   }
 }

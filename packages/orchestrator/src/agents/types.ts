@@ -102,6 +102,17 @@ export interface Builder {
   build(req: BuildRequest, reporter: PhaseReporter): Promise<AgentResult>;
 }
 
+// 리서치 요청: 코드가 아니라 질문이다. cwd는 스크래치 작업 폴더일 뿐
+// (수정 대상 저장소가 아님) — 리서처는 웹을 조사해 보고서 텍스트를 돌려준다.
+export interface ResearchRequest {
+  question: string;
+  cwd: string;
+}
+
+export interface Researcher {
+  research(req: ResearchRequest, reporter: PhaseReporter): Promise<AgentResult>;
+}
+
 // A named reviewer that inspects the built diff and returns pass/fail. The
 // pipeline runs an injected array of these in parallel (a fan-out), so adding a
 // second code reviewer or a test-runner is just another array entry in the

@@ -48,9 +48,9 @@ export function TeamIntro() {
       .catch((err) => setLoadError(err instanceof Error ? err.message : "하네스 로드 실패"));
   }, []);
 
-  const groups: { role: Role; members: Agent[] }[] = (["plan", "build", "verify"] as const).map(
-    (role) => ({ role, members: CAST.filter((a) => a.role === role) })
-  );
+  const groups: { role: Role; members: Agent[] }[] = (
+    ["plan", "build", "verify", "research"] as const
+  ).map((role) => ({ role, members: CAST.filter((a) => a.role === role) }));
 
   return (
     <div className="panel">

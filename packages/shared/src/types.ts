@@ -5,6 +5,7 @@ export type RunStatus =
   | "awaiting_approval"
   | "building"
   | "verifying"
+  | "researching" // 리서치 전용 run — 상현이 조사/보고서 작성 중
   | "needs_input" // a step exhausted retries + 호재 escalation → waiting for the user
   | "committed"
   | "rejected"
@@ -16,12 +17,13 @@ export type Phase =
   | "approval"
   | "build"
   | "verify"
+  | "research"
   | "commit"
   | "system";
 
 // A Step is one agent's unit of work within a run (a span with a lifecycle),
 // as opposed to Phase which is a coarse pipeline stage label on a log line.
-export type StepKind = "plan" | "build" | "verify" | "review" | "test" | "commit";
+export type StepKind = "plan" | "build" | "verify" | "review" | "test" | "commit" | "research";
 
 export type StepStatus = "pending" | "running" | "passed" | "failed" | "skipped";
 
@@ -29,7 +31,7 @@ export type StepStatus = "pending" | "running" | "passed" | "failed" | "skipped"
 // `step` events carry the step-specific fields; older consumers can ignore
 // them since every added field is optional.
 // Who is speaking + what kind of turn it is in the team chat.
-export type ChatRole = "plan" | "build" | "verify" | "system" | "user";
+export type ChatRole = "plan" | "build" | "verify" | "research" | "system" | "user";
 export type ChatKind = "build" | "verify" | "escalate" | "guide" | "commit" | "note";
 
 // One turn in a run's agent conversation (구현→검증→구현 loop + 호재 escalation +

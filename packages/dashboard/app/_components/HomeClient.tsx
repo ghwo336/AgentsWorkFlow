@@ -1,24 +1,32 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { RESEARCH_PROJECT } from "../lib/agents";
 import { api } from "../lib/api";
 import { useOrchestratorEvents } from "../lib/useOrchestratorEvents";
 import type { ProjectSummary } from "../lib/types";
+import { ResearchTab } from "./ResearchTab";
 import { TeamIntro } from "./TeamIntro";
 
-type HomeTab = "projects" | "team";
+type HomeTab = "projects" | "research" | "team";
+
+// 리서치 run들이 담기는 예약 프로젝트는 프로젝트 탭이 아니라 리서치 탭의
+// 것이다 — 목록에서 숨긴다.
+const visibleProjects = (rows: ProjectSummary[]) => rows.filter((p) => p.name !== RESEARCH_PROJECT);
 
 // Home UI. The initial project list arrives from the server component
 // (page.tsx) inside the HTML; SSE events refresh it live afterward.
 export function HomeClient({ initialProjects }: { initialProjects: ProjectSummary[] }) {
   const [tab, setTab] = useState<HomeTab>("projects");
-  const [projects, setProjects] = useState<ProjectSummary[]>(initialProjects);
+  const [projects, setProjects] = useState<ProjectSummary[]>(visibleProjects(initialProjects));
   const [newName, setNewName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // SSE 이벤트 카운터 — 리서치 탭이 목록/보고서를 다시 읽는 신호로 쓴다.
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const load = useCallback(async () => {
     try {
-      setProjects(await api.listProjects());
+      setProjects(visibleProjects(await api.listProjects()));
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "프로젝트 목록 로드 실패");
@@ -26,7 +34,10 @@ export function HomeClient({ initialProjects }: { initialProjects: ProjectSummar
   }, []);
 
   // Live status refresh: any orchestrator event may change a project's state.
-  const onEvent = useCallback(() => load(), [load]);
+  const onEvent = useCallback(() => {
+    load();
+    setRefreshKey((n) => n + 1);
+  }, [load]);
   useOrchestratorEvents(onEvent);
 
   async function create(e: React.FormEvent) {
@@ -51,6 +62,13 @@ export function HomeClient({ initialProjects }: { initialProjects: ProjectSummar
         </button>
         <button
           type="button"
+          className={`viz-tab${tab === "research" ? " active" : ""}`}
+          onClick={() => setTab("research")}
+        >
+          🔍 리서치
+        </button>
+        <button
+          type="button"
           className={`viz-tab${tab === "team" ? " active" : ""}`}
           onClick={() => setTab("team")}
         >
@@ -58,6 +76,7 @@ export function HomeClient({ initialProjects }: { initialProjects: ProjectSummar
         </button>
       </div>
 
+      {tab === "research" && <ResearchTab refreshKey={refreshKey} />}
       {tab === "team" && <TeamIntro />}
 
       {tab === "projects" && (

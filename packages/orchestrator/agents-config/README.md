@@ -8,6 +8,7 @@
 - 기획(호재): PLAN/INTERVENE 프롬프트 뒤에 붙음
 - 검증자(주호/동환): 각 codex 렌즈 뒤에 붙음 · 유준: 통합 렌즈 뒤에 붙음
 - 성호(빌드 검사): 모델이 없어 하네스 미적용 (파일 없음이 정상)
+- 리서처(상현): `ClaudeResearcher`의 RESEARCH_SYSTEM 뒤에 붙음
 
 파일이 없으면 공용 프롬프트만 사용합니다. **수정 후 orchestrator 재시작 필요**
 (`launchctl kickstart -k gui/$(id -u)/dev.pelicanlab.agent-orchestrator`).

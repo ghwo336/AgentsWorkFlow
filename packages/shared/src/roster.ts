@@ -8,7 +8,11 @@
 // ("build:minjae"), so a person could hold seats in two roles without the
 // selection becoming ambiguous. Currently every person holds exactly one seat.
 
-export type RosterRole = "plan" | "build" | "verify";
+export type RosterRole = "plan" | "build" | "verify" | "research";
+
+// 리서치 run들이 담기는 예약 프로젝트 이름 — 대시보드 홈의 리서치 탭이 이
+// 프로젝트만 보여주고, 프로젝트 탭 목록에서는 숨긴다.
+export const RESEARCH_PROJECT = "리서치";
 
 export interface RosterSeat {
   key: string; // "build:juho" — stored in Run.agents
@@ -34,6 +38,7 @@ export const SEATS: RosterSeat[] = [
   { key: "verify:donghwan", agentId: "donghwan", name: "동환", role: "verify", reviewerNames: ["보안"] },
   { key: "verify:yujun", agentId: "yujun", name: "유준", role: "verify", reviewerNames: ["통합"] },
   { key: "verify:seongho", agentId: "seongho", name: "성호", role: "verify", reviewerNames: ["빌드", "tests"] },
+  { key: "research:sanghyun", agentId: "sanghyun", name: "상현", role: "research", specialty: "리서치" },
 ];
 
 export const ALL_SEAT_KEYS = SEATS.map((s) => s.key);
@@ -57,6 +62,7 @@ export interface RunRoster {
   builderIds: string[]; // 참여 개발자의 person id (attempt 순환 배정 순서)
   reviewerNames: string[]; // fan-out에 포함할 Reviewer.name 목록
   verifierIds: string[]; // 참여 검증자의 person id (표시용)
+  researcher: boolean; // 상현 참여 여부 (리서치 전용 run)
 }
 
 // Parse a Run.agents JSON column (seat keys). null/invalid/empty → null (= 전원).
@@ -82,6 +88,7 @@ export function rosterOf(keys: string[] | null | undefined): RunRoster {
     builderIds: of("build").map((s) => s.agentId),
     verifierIds: verify.map((s) => s.agentId),
     reviewerNames: verify.flatMap((s) => s.reviewerNames ?? []),
+    researcher: of("research").length > 0,
   };
 }
 
@@ -91,11 +98,15 @@ export function rosterOf(keys: string[] | null | undefined): RunRoster {
 //   direct     기획 생략, 승인 없이 바로 구현
 //   verifyOnly 검증자만 — 프로젝트 현재 상태 감사
 //   planOnly   기획만 — 계획서 작성 후 종료
-export type RunMode = "full" | "direct" | "verifyOnly" | "planOnly";
+//   research   리서처만 — 웹 조사 후 보고서 작성 (코드 작업 없음)
+export type RunMode = "full" | "direct" | "verifyOnly" | "planOnly" | "research";
 
 export function runModeOf(roster: RunRoster): RunMode {
   if (roster.builderIds.length > 0) return roster.planner ? "full" : "direct";
-  return roster.planner ? "planOnly" : "verifyOnly";
+  if (roster.planner) return "planOnly";
+  // 리서처 단독일 때만 research — 검증자와 섞인 조합은 validateAgents가 거절한다.
+  if (roster.researcher && roster.verifierIds.length === 0) return "research";
+  return "verifyOnly";
 }
 
 // Sanitize a PLANNER-recommended team (호재의 ```team 블록) into an applyable
@@ -105,7 +116,8 @@ export function runModeOf(roster: RunRoster): RunMode {
 // 빌드 게이트(성호)는 추천과 무관하게 항상 포함한다. 검증을 정말 빼는 것은 사용자가
 // 직접 선택 모드에서 의식적으로 고를 때만 가능하다.
 export function applyableTeam(keys: string[]): string[] | null {
-  const known = [...new Set(keys.map(String).filter((k) => byKey.has(k)))];
+  // 리서치 좌석은 개발 run의 팀이 아니다 — 추천에 섞여 와도 버린다.
+  const known = [...new Set(keys.map(String).filter((k) => byKey.get(k) && byKey.get(k)!.role !== "research"))];
   if (!known.includes("plan:hojae")) known.unshift("plan:hojae");
   for (const required of ["verify:juho", "verify:seongho"]) {
     if (!known.includes(required)) known.push(required);
@@ -128,7 +140,7 @@ export function describeTeam(keys: string[]): string {
     const names = SEATS.filter((s) => s.role === role && keys.includes(s.key)).map((s) => s.name);
     return names.length ? `${title} ${names.join("·")}` : null;
   };
-  return [part("plan", "기획"), part("build", "개발"), part("verify", "검증")]
+  return [part("plan", "기획"), part("build", "개발"), part("verify", "검증"), part("research", "리서치")]
     .filter(Boolean)
     .join(" / ");
 }
@@ -144,6 +156,10 @@ export function validateAgents(keys: string[]): string | null {
   const unknown = keys.filter((k) => !byKey.has(k));
   if (unknown.length > 0) return `알 수 없는 에이전트입니다: ${unknown.join(", ")}`;
   const r = rosterOf(keys);
+  // 리서치는 단독 run — 코드 파이프라인(기획/개발/검증)과 섞을 수 없다.
+  if (r.researcher && keys.length > 1) {
+    return "리서치는 상현 단독으로만 실행할 수 있습니다 — 다른 에이전트와 함께 선택할 수 없어요.";
+  }
   // planOnly는 기획서만 쓰고 끝난다 — 검증자가 같이 있으면 그 검증은 영영 안
   // 돌므로 실행 불가능한 조합으로 거절한다.
   if (runModeOf(r) === "planOnly" && r.verifierIds.length > 0) {

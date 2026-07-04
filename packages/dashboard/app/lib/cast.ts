@@ -10,6 +10,7 @@
 //   보안 검증 (verify) = codex(보안)  → 동환 (보안 전담 감사)
 //   통합 검증 (verify) = Claude(통합) → 유준 (런타임·배선 동작)
 //   QA       (verify) = 빌드(빌드)   → 성호 (빌드/타입체크 실제 실행)
+//   리서치 (research) = Opus        → 상현 (웹 조사 → 보고서)
 //
 // This module is pure data + lookups so both server and client components can
 // use it. How a character is DRAWN lives in agents.tsx (SVG components).
@@ -22,6 +23,7 @@ import type { Step } from "./types";
 export {
   ALL_SEAT_KEYS,
   parseAgents,
+  RESEARCH_PROJECT,
   rosterOf,
   runModeOf,
   seatsOf,
@@ -32,7 +34,7 @@ export {
   type RunMode,
 } from "@agent-loop/shared/roster";
 
-export type Role = "plan" | "build" | "verify" | "system";
+export type Role = "plan" | "build" | "verify" | "research" | "system";
 
 export type Feature = "glasses" | "headset" | "spiky" | "mustache" | "none";
 
@@ -191,6 +193,19 @@ export const CAST: Agent[] = [
     feature: "headset",
     laptop: MACBOOK_SPACEGRAY,
   },
+  {
+    id: "sanghyun",
+    name: "상현",
+    role: "research",
+    roleLabel: "리서치",
+    engineLabel: "Opus",
+    blurb: "웹을 뒤져 근거 있는 조사 보고서를 써요 — 리서치 전문",
+    hair: "#2f2a26",
+    shirt: "#ffb454",
+    accent: "#c77f22",
+    feature: "glasses",
+    laptop: MACBOOK_SILVER,
+  },
 ];
 
 export const SYSTEM_AGENT: Agent = {
@@ -211,6 +226,7 @@ export const ROLE_LABEL: Record<Role, string> = {
   plan: "기획",
   build: "개발",
   verify: "검증",
+  research: "리서치",
   system: "커밋",
 };
 
@@ -218,6 +234,7 @@ export const ROLE_COLOR: Record<Role, string> = {
   plan: "#5b9dff",
   build: "#57d99a",
   verify: "#b98bff",
+  research: "#ffb454",
   system: "#8b93b8",
 };
 
@@ -243,6 +260,8 @@ function roleForKind(kind: string): Role {
     case "review":
     case "test":
       return "verify";
+    case "research":
+      return "research";
     default:
       return "system";
   }
@@ -250,6 +269,7 @@ function roleForKind(kind: string): Role {
 
 function roleForModel(model: string | null | undefined, phase: string | null | undefined): Role {
   const p = (phase ?? "").toLowerCase();
+  if (p.includes("research")) return "research";
   if (p.includes("plan")) return "plan";
   if (p.includes("build")) return "build";
   if (p.includes("verify") || p.includes("review") || p.includes("test")) return "verify";
@@ -357,6 +377,7 @@ export function agentForChat(msg: {
   if (msg.role === "user") return USER_AGENT;
   if (msg.agent && byId[msg.agent]) return byId[msg.agent];
   if (msg.role === "plan") return membersOf("plan")[0] ?? SYSTEM_AGENT;
+  if (msg.role === "research") return membersOf("research")[0] ?? SYSTEM_AGENT;
   const a = msg.attempt && msg.attempt > 0 ? msg.attempt - 1 : 0;
   if (msg.role === "verify") return verifyAgent(msg.engine, a);
   if (msg.role === "build") {

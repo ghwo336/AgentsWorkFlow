@@ -12,6 +12,7 @@ type RunRow = {
   title: string;
   status: string;
   brief: string;
+  agents?: string | null;
   targetDir?: string | null;
   commit?: string | null;
   error?: string | null;
@@ -49,11 +50,20 @@ export default async function RunDetail({
 
       {run.plan && (
         <div className="panel">
-          <b className="agent-chip">
-            <PixelAvatar agent={agentById("hojae")} size={22} />
-            <span style={{ color: ROLE_COLOR.plan }}>호재의 기획안</span>
-            <span className="muted small">(Opus)</span>
-          </b>
+          {/* 리서치 run의 plan 칼럼에는 상현의 보고서가 담긴다 — 주인을 맞춰 표시 */}
+          {(run.agents ?? "").includes("research:") ? (
+            <b className="agent-chip">
+              <PixelAvatar agent={agentById("sanghyun")} size={22} />
+              <span style={{ color: ROLE_COLOR.research }}>상현의 리서치 보고서</span>
+              <span className="muted small">(Opus)</span>
+            </b>
+          ) : (
+            <b className="agent-chip">
+              <PixelAvatar agent={agentById("hojae")} size={22} />
+              <span style={{ color: ROLE_COLOR.plan }}>호재의 기획안</span>
+              <span className="muted small">(Opus)</span>
+            </b>
+          )}
           <pre className="diff" style={{ whiteSpace: "pre-wrap" }}>{run.plan}</pre>
         </div>
       )}
