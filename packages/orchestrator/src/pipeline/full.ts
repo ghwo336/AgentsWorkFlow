@@ -1,3 +1,4 @@
+import { loadAgentLessons, loadProjectLessons } from "../agents/learn-store.js";
 import type { RunReporter } from "../reporter.js";
 import { loadBuildState } from "./build-state.js";
 import { planOnce, resumeOrder } from "./shared.js";
@@ -38,11 +39,16 @@ export async function plan(
 ): Promise<void> {
   await deps.git.ensureRepo(targetDir);
   const order = await resumeOrder(deps, runId);
+  // 팀 학습 노트: 프로젝트 사실 + 호재의 승인된 개인 교훈을 계획 프롬프트에.
+  const project = (await deps.store.getProject(runId)) ?? "default";
+  const learned =
+    [loadProjectLessons(project), loadAgentLessons("hojae")].filter(Boolean).join("\n") || undefined;
   const planned = await planOnce(deps, brief, targetDir, reporter, order, {
     previousPlan: opts.previousPlan,
     feedback: opts.feedback,
     suggestTeam: opts.suggestTeam,
     assignableDevs: assignableDevsFor(opts.builderIds),
+    learned,
   });
   if (planned === null) return; // planOnce already marked the run failed
 
@@ -81,6 +87,7 @@ export async function build(deps: PipelineDeps, runId: string, reporter: RunRepo
     stepDevs: st.stepDevs,
     brief: st.brief,
     targetDir: st.targetDir,
+    project: st.project,
     reporter,
     order: st.order,
     roster: st.roster,

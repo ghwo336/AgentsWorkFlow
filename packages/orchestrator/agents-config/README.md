@@ -14,3 +14,20 @@
 (`launchctl kickstart -k gui/$(id -u)/dev.pelicanlab.agent-orchestrator`).
 
 에이전트 id ↔ 이름은 `packages/shared/src/roster.ts`의 SEATS 참고.
+
+## learned/ — 팀 학습 노트 (쓸수록 똑똑해지는 루프)
+
+하네스가 사람이 쓰는 규칙이라면, `learned/`는 팀이 일하면서 스스로 쌓는 기억입니다
+(`src/agents/learn-store.ts`). 하네스와 달리 **run 시작마다 새로 읽으므로 재시작이
+필요 없습니다.**
+
+- `learned/projects/<프로젝트>.md` — 프로젝트 운영 사실. run이 committed로 끝나면
+  회고(호재, REFLECT_MODEL)가 그 run의 검증 실패 이력에서 교훈을 뽑아 **자동으로**
+  쌓고, 이 프로젝트의 모든 계획/빌드 프롬프트에 주입됩니다. 틀린 항목은 그냥
+  지우세요 — 다음 run부터 반영됩니다.
+- `learned/agents/<agentId>.md` — 팀원 개인 교훈. **자동 저장되지 않습니다** —
+  회고/리서처가 후보를 `proposals.json`(제안함)에 올리고, 대시보드 팀 소개 탭에서
+  사용자가 승인한 것만 여기 편입됩니다 (계획 승인 게이트의 학습판).
+- 모든 교훈은 `[조건]` 접두가 강제됩니다 — "언제 적용되는가" 없는 무조건 규칙이
+  프로젝트를 넘나들며 충돌하는 것을 막기 위해서입니다.
+- 프롬프트에는 파일당 최신 30개 불릿만 주입됩니다 (파일은 전체 이력 보존).

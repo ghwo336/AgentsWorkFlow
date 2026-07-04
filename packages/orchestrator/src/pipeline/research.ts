@@ -1,3 +1,4 @@
+import { addProposals, loadAgentLessons } from "../agents/learn-store.js";
 import type { RunReporter } from "../reporter.js";
 import { compactAgentSummary, resumeOrder } from "./shared.js";
 import type { PipelineDeps } from "./types.js";
@@ -25,7 +26,11 @@ export async function research(
   });
   await step.log("research", `상현이 조사를 시작합니다 (${config.researchModel})…`);
 
-  const result = await researcher.research({ question, cwd: targetDir }, step);
+  // 상현의 승인된 방법론 교훈 — 제안함에서 사용자가 승인한 것만 주입된다.
+  const result = await researcher.research(
+    { question, cwd: targetDir, learned: loadAgentLessons("sanghyun") },
+    step
+  );
   if (result.isError || !result.text) {
     await step.finish("failed", "리서치 보고서를 작성하지 못했습니다.");
     await reporter.status("failed", { error: "리서치 보고서를 작성하지 못했습니다." });
@@ -46,4 +51,19 @@ export async function research(
   });
   await reporter.status("committed", { plan: report });
   await reporter.log("research", "리서치 완료 ✅ — 보고서를 작성했습니다.");
+
+  // 상현이 스스로 제안한 조사-방법 교훈 → 제안함 (승인 전에는 주입되지 않음).
+  if (result.lessons.length > 0) {
+    const project = (await deps.store.getProject(runId)) ?? "default";
+    const added = addProposals(
+      result.lessons.map((l) => ({ ...l, agentId: "sanghyun" })),
+      { project, runId }
+    );
+    if (added > 0) {
+      await reporter.log(
+        "research",
+        `상현이 조사 방법 교훈 ${added}건을 제안함에 등록했습니다 🧠 (팀 소개 탭에서 승인/거절)`
+      );
+    }
+  }
 }

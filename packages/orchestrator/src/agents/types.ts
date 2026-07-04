@@ -20,6 +20,9 @@ export interface PlanResult extends AgentResult {
 export interface PlanRequest {
   brief: string;
   cwd: string;
+  // 팀 학습 노트(learn-store)에서 온, 이 run에 적용되는 교훈 불릿 — 프롬프트에
+  // 그대로 주입된다. 없으면 학습된 것이 없는 것.
+  learned?: string;
   // For an interactive revision: the plan being revised + the user's requested
   // changes. When set, the planner revises rather than starting from scratch.
   previousPlan?: string;
@@ -38,6 +41,8 @@ export interface BuildRequest {
   brief: string;
   cwd: string;
   feedback?: string;
+  // 프로젝트 학습 노트 + 이 빌더의 승인된 교훈 (learn-store) — 프롬프트 주입용.
+  learned?: string;
   // When set, the builder implements ONLY this one step of the plan, with the
   // already-completed steps given as context.
   step?: {
@@ -107,10 +112,19 @@ export interface Builder {
 export interface ResearchRequest {
   question: string;
   cwd: string;
+  // 리서처의 승인된 방법론 교훈 (learn-store) — 프롬프트 주입용.
+  learned?: string;
+}
+
+// 리서치 결과 = 보고서 + (선택) 리서처가 스스로 제안한 방법론 교훈. 교훈은
+// 지식(낡는다)이 아니라 조사 방법(안 낡는다)만 — 제안함으로 가서 사용자 승인
+// 후에야 프롬프트에 주입된다.
+export interface ResearchResult extends AgentResult {
+  lessons: Array<{ condition: string; lesson: string; evidence: string }>;
 }
 
 export interface Researcher {
-  research(req: ResearchRequest, reporter: PhaseReporter): Promise<AgentResult>;
+  research(req: ResearchRequest, reporter: PhaseReporter): Promise<ResearchResult>;
 }
 
 // A named reviewer that inspects the built diff and returns pass/fail. The

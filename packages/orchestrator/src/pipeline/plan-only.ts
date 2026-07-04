@@ -1,3 +1,4 @@
+import { loadAgentLessons, loadProjectLessons } from "../agents/learn-store.js";
 import type { RunReporter } from "../reporter.js";
 import { planOnce, resumeOrder } from "./shared.js";
 import type { PipelineDeps } from "./types.js";
@@ -13,7 +14,10 @@ export async function planOnly(
 ): Promise<void> {
   await deps.git.ensureRepo(targetDir);
   const order = await resumeOrder(deps, runId);
-  const planned = await planOnce(deps, brief, targetDir, reporter, order);
+  const project = (await deps.store.getProject(runId)) ?? "default";
+  const learned =
+    [loadProjectLessons(project), loadAgentLessons("hojae")].filter(Boolean).join("\n") || undefined;
+  const planned = await planOnce(deps, brief, targetDir, reporter, order, { learned });
   if (planned === null) return; // planOnce already marked the run failed
   await deps.store.saveSteps(runId, planned.steps);
   await reporter.status("committed", { plan: planned.text });

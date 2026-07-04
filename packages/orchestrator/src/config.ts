@@ -57,6 +57,8 @@ export const config = {
   buildModel: process.env.BUILD_MODEL ?? "claude-sonnet-4-6",
   // 리서처(상현) — 웹 조사 + 보고서 작성. 깊은 종합이 필요해 기본은 Opus.
   researchModel: process.env.RESEARCH_MODEL ?? "claude-opus-4-8",
+  // Run 종료 후 회고(팀 학습 노트 교훈 추출) — 요약성 작업이라 기본 Sonnet.
+  reflectModel: process.env.REFLECT_MODEL ?? "claude-sonnet-4-6",
   codexModel: resolveCodexModel(),
   // Second-opinion LLM reviewer (유준) — runtime/integration lens in the fan-out.
   reviewModel: process.env.REVIEW_MODEL ?? "claude-sonnet-4-6",

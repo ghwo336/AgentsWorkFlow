@@ -19,6 +19,19 @@ export const CHAT_PAGE = 10;
 // 전문은 더보기 시 getStep으로 가져온다.
 export const STEP_PREVIEW = 300;
 
+// 제안함 항목 — orchestrator learn-store의 Proposal과 같은 shape.
+export interface LearningProposal {
+  id: string;
+  agentId: string;
+  condition: string;
+  lesson: string;
+  evidence: string;
+  project: string;
+  runId: string;
+  ts: string;
+  status: "pending" | "approved" | "rejected";
+}
+
 // Single place that talks to the backend HTTP API. Centralizes URL building,
 // the no-store cache policy, and consistent (Korean) error messages so pages
 // and hooks never construct a raw fetch (SRP — one reason to change: the API).
@@ -61,6 +74,25 @@ export const api = {
   // 팀 소개 모달용 — agentId → 하네스 md (agents-config/*.md 원문).
   agentHarnesses: () =>
     getJson<Record<string, string>>("/api/orchestrator/agents/harnesses", "하네스 로드 실패"),
+
+  // 팀 학습 노트 (agents-config/learned/) — 프로젝트명/agentId → md 원문.
+  agentLearned: () =>
+    getJson<{ projects: Record<string, string>; agents: Record<string, string> }>(
+      "/api/orchestrator/agents/learned",
+      "학습 노트 로드 실패"
+    ),
+
+  // 제안함: 승인 대기 중인 에이전트 교훈.
+  learningProposals: () =>
+    getJson<LearningProposal[]>("/api/orchestrator/learning/proposals", "제안함 로드 실패"),
+
+  // 제안 승인/거절 — 승인하면 그 팀원의 학습 파일에 편입돼 프롬프트에 주입된다.
+  resolveProposal: (id: string, action: "approve" | "reject") =>
+    postJson<unknown>(
+      `/api/orchestrator/learning/proposals/${encodeURIComponent(id)}`,
+      { action },
+      "제안 결정 실패"
+    ),
 
   setProjectDir: (name: string, defaultTargetDir: string) =>
     sendJson<Project>(

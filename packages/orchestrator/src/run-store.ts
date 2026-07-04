@@ -105,12 +105,19 @@ export class RunStore {
     return r?.title ?? null;
   }
 
+  // 이 run이 속한 프로젝트 이름 — 팀 학습 노트(learn-store)의 스코프 키.
+  async getProject(runId: string): Promise<string | null> {
+    const r = await prisma.run.findUnique({ where: { id: runId } });
+    return r?.project ?? null;
+  }
+
   // Everything needed to resume a run at the approval boundary from the DB.
   async getResumeState(runId: string): Promise<{
     status: string;
     brief: string;
     plan: string | null;
     targetDir: string | null;
+    project: string; // 학습 노트 스코프 키
     steps: string[];
     stepDevs: (string | null)[]; // 단계별 담당 개발자 person id (미배정 = null)
     agents: string[] | null; // participating seat keys; null = 전원
@@ -133,6 +140,7 @@ export class RunStore {
       brief: r.brief,
       plan: r.plan,
       targetDir: r.targetDir,
+      project: r.project,
       steps,
       stepDevs,
       agents: parseAgents(r.agents),

@@ -13,6 +13,7 @@ import type {
   PlanResult,
   Researcher,
   ResearchRequest,
+  ResearchResult,
 } from "./types.js";
 
 type ClaudePhase = "plan" | "build" | "research";
@@ -29,6 +30,16 @@ function workspaceRule(cwd: string): string {
     `- 임시 파일이 필요하면 /tmp가 아니라 이 폴더 안의 \`.tmp/\`를 만들어 쓰세요 (밖은 차단됩니다).`,
     `- 이 폴더가 비어 있으면 정상입니다 — 요청받은 것을 여기서 처음부터 새로 만드세요(scaffold).`,
     `- 바깥에 기존 저장소가 보여도 그것을 수정 대상으로 삼지 마세요.`,
+  ].join("\n");
+}
+
+// 팀 학습 노트 프롬프트 블록 — learn-store가 렌더링한 교훈 불릿을 싣는다.
+// 교훈은 전부 [조건] 접두를 달고 있으므로, 조건이 맞을 때만 따르라고 명시한다.
+function learnedBlock(learned: string | undefined): string {
+  if (!learned) return "";
+  return [
+    `# 팀 학습 노트 (과거 run에서 배운 것 — 각 항목의 [조건]이 이 작업에 해당할 때만 적용)`,
+    learned,
   ].join("\n");
 }
 
@@ -261,7 +272,9 @@ export class ClaudePlanner implements Planner {
             `수정된 전체 계획을 처음부터 다시 제시하세요 (끝에 \`\`\`steps 블록 포함).`,
           ].join("\n\n")
         : req.brief;
-    const prompt = `${workspaceRule(req.cwd)}\n\n${body}`;
+    const prompt = [workspaceRule(req.cwd), learnedBlock(req.learned), body]
+      .filter(Boolean)
+      .join("\n\n");
     let system = `${PLAN_SYSTEM}\n${STEPS_SYSTEM}`;
     if (req.assignableDevs?.length) system += `\n${assignSystem(req.assignableDevs)}`;
     if (req.suggestTeam) system += `\n${teamSystem()}`;
@@ -315,6 +328,7 @@ export class ClaudeBuilder implements Builder {
 
     const prompt = [
       workspaceRule(req.cwd),
+      learnedBlock(req.learned),
       `# Original request\n${req.brief}`,
       `# Approved plan (전체 맥락)\n${req.approvedPlan}`,
       completedBlock,
@@ -372,8 +386,40 @@ Report shape (markdown, in Korean):
   2) 본문 — 소제목으로 구조화, 근거와 함께.
   3) **출처** — 참조한 URL 목록 (제목 + 링크).
 
+Self-improvement (optional): if this investigation taught you a durable lesson
+about HOW to research — a source-quality finding ("X류 질문은 공식 문서가 뉴스보다
+정확했다") or a method finding ("스니펫만 믿지 말고 원문을 읽어야 했다") — append
+it AFTER the report as a fenced block. METHOD lessons only, never world knowledge
+(facts go stale; method does not). No lesson learned = omit the block entirely.
+\`\`\`lessons
+[{"condition": "언제 적용되는가", "lesson": "...", "evidence": "이번 조사의 어떤 경험에서"}]
+\`\`\`
+
 IMPORTANT: Write all prose in Korean (한국어). Keep technical terms, code
 identifiers, product names, and URLs in their original form.`;
+
+// 리서처 출력에서 ```lessons 블록을 떼어낸다 — 보고서 본문(사용자가 읽는 것)과
+// 교훈 후보(제안함으로 가는 것)를 분리. 파싱 실패는 교훈 없음으로 취급한다.
+export function splitResearchLessons(text: string): {
+  report: string;
+  lessons: Array<{ condition: string; lesson: string; evidence: string }>;
+} {
+  const m = text.match(/```lessons\s*([\s\S]*?)```/);
+  if (!m) return { report: text, lessons: [] };
+  const report = text.replace(m[0], "").trim();
+  try {
+    const arr = JSON.parse(m[1]);
+    const lessons = (Array.isArray(arr) ? arr : [])
+      .filter(
+        (v: any) =>
+          typeof v?.condition === "string" && typeof v?.lesson === "string" && typeof v?.evidence === "string"
+      )
+      .slice(0, 2);
+    return { report, lessons };
+  } catch {
+    return { report, lessons: [] };
+  }
+}
 
 // Claude research agent (상현): web-search driven investigation that ends in
 // an inline Korean report. Read-only — the run has no diff, no commit; the
@@ -384,14 +430,17 @@ export class ClaudeResearcher implements Researcher {
     private readonly harness?: string
   ) {}
 
-  research(req: ResearchRequest, reporter: PhaseReporter): Promise<AgentResult> {
+  async research(req: ResearchRequest, reporter: PhaseReporter): Promise<ResearchResult> {
     const prompt = [
+      learnedBlock(req.learned),
       `# 리서치 질문`,
       req.question,
       ``,
       `웹을 조사해서 위 질문에 대한 보고서를 작성하세요. 보고서 전문을 마지막 응답 메시지에 그대로 담으세요.`,
-    ].join("\n");
-    return runClaude(reporter, "research", this.model, prompt, {
+    ]
+      .filter(Boolean)
+      .join("\n");
+    const result = await runClaude(reporter, "research", this.model, prompt, {
       cwd: req.cwd,
       // 읽기 전용: 파일 수정 없이 조사만 한다. 웹 도구는 plan 모드에서도 동작.
       permissionMode: "plan",
@@ -399,5 +448,9 @@ export class ClaudeResearcher implements Researcher {
       canUseTool: workspaceGuard(req.cwd),
       disallowedTools: ["Write", "Edit", "MultiEdit", "NotebookEdit", "Task"],
     });
+    // Parse the fenced lessons HERE — the block format is this adapter's contract
+    // with its prompt (plan-format.ts와 같은 원칙); callers get structure only.
+    const { report, lessons } = splitResearchLessons(result.text);
+    return { text: report, isError: result.isError, lessons };
   }
 }

@@ -1,5 +1,7 @@
 import { REVIEWER_AGENT_ID, type RunRoster } from "@agent-loop/shared/roster";
+import { loadAgentLessons, loadProjectLessons } from "../agents/learn-store.js";
 import type { RunReporter } from "../reporter.js";
+import { reflectAndLearn } from "./reflection.js";
 import {
   builderFor,
   compactAgentSummary,
@@ -26,6 +28,7 @@ export async function executeSteps(
     stepDevs?: (string | null)[]; // 단계별 담당 개발자 (계획에서 배정)
     brief: string;
     targetDir: string;
+    project: string; // 팀 학습 노트 스코프 키
     reporter: RunReporter;
     order: () => number;
     roster: RunRoster;
@@ -36,12 +39,17 @@ export async function executeSteps(
 ): Promise<void> {
   const { runId, approvedPlan, steps, brief, targetDir, reporter, order, roster } = args;
   const { git } = deps;
+  // 이 프로젝트에서 팀이 배운 것 — run 시작마다 새로 읽어(직전 run의 회고가
+  // 바로 반영되도록) 모든 빌드 프롬프트에 주입한다.
+  const projectLearned = loadProjectLessons(args.project);
   // Chain parent: the first (resumed) step hangs off seedParentId (plan step,
   // or the previous step's commit); each next step hangs off the previous
   // step's commit, so the node graph is one connected spine.
   let parentId = args.seedParentId;
   let lastSha = "";
   const completed = steps.slice(0, args.startIdx);
+  // 회고용 이력 — 단계마다 (설명, 거절 사유들)을 모아 run 종료 후 넘긴다.
+  const stepHistory: Array<{ description: string; failures: string[] }> = [];
 
   for (let i = args.startIdx; i < steps.length; i++) {
     const outcome = await runStep(deps, {
@@ -49,6 +57,7 @@ export async function executeSteps(
       approvedPlan,
       brief,
       targetDir,
+      projectLearned,
       reporter,
       order,
       roster,
@@ -60,6 +69,7 @@ export async function executeSteps(
       completed: [...completed],
       seedFeedback: i === args.startIdx ? args.seedFeedbackForFirst : undefined,
     });
+    stepHistory.push({ description: steps[i], failures: outcome.failures });
 
     if (!outcome.passed) {
       await reporter.status("needs_input", {
@@ -78,6 +88,20 @@ export async function executeSteps(
     "commit",
     `모든 단계(${steps.length}개) 완료 ✅ 최종 커밋 ${finalSha.slice(0, 10)}`
   );
+
+  // 회고 — run 완료 후 이번 run의 실패 이력에서 교훈을 추출해 학습 노트에
+  // 쌓는다. run은 이미 committed로 마감됐으므로 여기 실패는 run에 영향 없음.
+  await reflectAndLearn(deps, {
+    runId,
+    project: args.project,
+    brief,
+    plan: approvedPlan,
+    targetDir,
+    builderIds: roster.builderIds,
+    steps: stepHistory,
+    reporter,
+    order,
+  });
 }
 
 interface StepCtx {
@@ -85,6 +109,7 @@ interface StepCtx {
   approvedPlan: string;
   brief: string;
   targetDir: string;
+  projectLearned?: string; // 프로젝트 학습 노트 (run 시작에 한 번 로드)
   reporter: RunReporter;
   order: () => number;
   roster: RunRoster;
@@ -103,7 +128,7 @@ interface StepCtx {
 async function runStep(
   deps: PipelineDeps,
   ctx: StepCtx
-): Promise<{ passed: boolean; lastStepId: string; sha: string; feedback?: string }> {
+): Promise<{ passed: boolean; lastStepId: string; sha: string; feedback?: string; failures: string[] }> {
   const { config } = deps;
   const { reporter } = ctx;
   const tag = `단계 ${ctx.index}/${ctx.total}`;
@@ -120,7 +145,7 @@ async function runStep(
       `${tag}: 검증을 통과하지 못했습니다 — 기획 에이전트(호재)가 없어 바로 사용자 개입을 기다립니다.`,
       { level: "error" }
     );
-    return { passed: false, lastStepId: r1.lastStepId, sha: "", feedback: r1.feedback };
+    return { passed: false, lastStepId: r1.lastStepId, sha: "", feedback: r1.feedback, failures: r1.failures };
   }
 
   // Escalate to 호재 (Opus): diagnose the repeated failures + hand the builder
@@ -145,7 +170,8 @@ async function runStep(
     `${tag}: 호재 개입 후에도 검증을 통과하지 못했습니다 — 사용자 개입을 기다립니다.`,
     { level: "error" }
   );
-  return { passed: false, lastStepId: r2.lastStepId, sha: "", feedback: r2.feedback };
+  // r2.failures는 previousFailures 시딩으로 r1의 사유까지 포함한 전체 이력이다.
+  return { passed: false, lastStepId: r2.lastStepId, sha: "", feedback: r2.feedback, failures: r2.failures };
 }
 
 // 호재(Opus) steps in when a step keeps failing: reads the diff + failures and
@@ -251,12 +277,19 @@ async function runStepRound(
     });
     await buildStep.log("build", `${tag} 구현 중 (${config.buildModel})…`, { model: "sonnet" });
 
+    // 학습 주입 = 프로젝트 노트(자동 축적) + 이 빌더의 승인된 개인 교훈.
+    // 개인 교훈은 담당자가 attempt마다 바뀔 수 있어 여기서 조합한다.
+    const learned =
+      [ctx.projectLearned, builderId ? loadAgentLessons(builderId) : undefined]
+        .filter(Boolean)
+        .join("\n") || undefined;
     const buildResult = await builder.build(
       {
         approvedPlan: ctx.approvedPlan,
         brief: ctx.brief,
         cwd: targetDir,
         feedback,
+        learned,
         step: {
           index: ctx.index,
           total: ctx.total,

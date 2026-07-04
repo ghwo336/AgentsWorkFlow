@@ -68,6 +68,7 @@ export async function planOnce(
     feedback?: string;
     suggestTeam?: boolean;
     assignableDevs?: Array<{ key: string; name: string; specialty?: string }>;
+    learned?: string; // 팀 학습 노트 (프로젝트 + 호재 개인 교훈)
   } = {}
 ): Promise<{
   text: string;
@@ -97,7 +98,7 @@ export async function planOnce(
   );
 
   const result = await planner.plan(
-    { brief, cwd: targetDir, previousPlan, feedback, suggestTeam, assignableDevs },
+    { brief, cwd: targetDir, previousPlan, feedback, suggestTeam, assignableDevs, learned: opts.learned },
     step
   );
   if (result.isError || !result.text) {

@@ -13,6 +13,7 @@ export interface BuildState {
   stepDevs: (string | null)[];
   brief: string;
   targetDir: string;
+  project: string; // 팀 학습 노트 스코프 키
   planStepId: string;
   order: () => number;
   roster: RunRoster;
@@ -42,6 +43,7 @@ export async function loadBuildState(
     stepDevs: st.stepDevs,
     brief: st.brief,
     targetDir: st.targetDir,
+    project: st.project,
     planStepId,
     order,
     roster: rosterOf(st.agents),

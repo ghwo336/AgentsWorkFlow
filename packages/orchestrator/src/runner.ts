@@ -4,6 +4,8 @@ import { ClaudeReviewer } from "./agents/claude-reviewer.js";
 import { CodexVerifier } from "./agents/codex-agent.js";
 import { CommandReviewer } from "./agents/command-reviewer.js";
 import { lensWithHarness, loadHarness } from "./agents/harness.js";
+import { ensureLearnedDirs } from "./agents/learn-store.js";
+import { ClaudeReflector } from "./agents/reflector.js";
 import { QUALITY_LENS, SECURITY_LENS } from "./agents/review-policy.js";
 import { describeTeam, rosterOf, runModeOf, seatsOf } from "@agent-loop/shared/roster";
 import type { InterventionDecision } from "@agent-loop/shared/types";
@@ -73,6 +75,10 @@ const buildersById = Object.fromEntries(
   ])
 );
 
+// 팀 학습 노트 디렉터리 골격 (agents-config/learned/) — 사용자가 파일을 직접
+// 열어 고치기 쉽도록 부팅 시 만들어 둔다.
+ensureLearnedDirs();
+
 const pipeline = new RunPipeline({
   planner: new ClaudePlanner(config.planModel, harnessOf("hojae")),
   builder: new ClaudeBuilder(config.buildModel),
@@ -80,6 +86,8 @@ const pipeline = new RunPipeline({
   reviewers,
   // 리서처(상현) — 웹 조사 + 보고서. 하네스: agents-config/sanghyun.md.
   researcher: new ClaudeResearcher(config.researchModel, harnessOf("sanghyun")),
+  // 회고 — run 종료 후 실패 이력에서 교훈을 뽑아 학습 노트/제안함에 쌓는다.
+  reflector: new ClaudeReflector(config.reflectModel),
   git,
   store,
   config,

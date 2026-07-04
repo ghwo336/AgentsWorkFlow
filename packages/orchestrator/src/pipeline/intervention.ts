@@ -37,6 +37,7 @@ export async function resumeFromInput(
       stepDevs: st.stepDevs,
       brief: st.brief,
       targetDir: st.targetDir,
+      project: st.project,
       reporter,
       order: st.order,
       roster: st.roster,
