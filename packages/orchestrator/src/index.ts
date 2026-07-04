@@ -1,4 +1,4 @@
-import cors from "@fastify/cors";
+import { timingSafeEqual } from "node:crypto";
 import Fastify from "fastify";
 import { z } from "zod";
 import { prisma } from "@agent-loop/shared/db";
@@ -10,13 +10,30 @@ import { registerAgentRoutes } from "./http-agents.js";
 import { registerDataRoutes } from "./http-data.js";
 import { resolveApproval, resolveInput, retryRun, startRun } from "./runner.js";
 import { sweepOrphans } from "./startup-sweep.js";
+import { assertAllowedTargetDir, TargetDirError } from "./workspace-path.js";
 
 // Before serving anything, close out work orphaned by the previous process —
 // otherwise 'running' steps from a dead build stay running forever in the UI.
 await sweepOrphans();
 
 const app = Fastify({ logger: false });
-await app.register(cors, { origin: true });
+
+// No CORS on purpose: the only legitimate client is the dashboard's SERVER
+// (orch.ts / the SSE passthrough route) — browsers never call us directly.
+// Reflecting arbitrary origins here would let any webpage open in a browser on
+// this machine read/drive the API on 127.0.0.1.
+
+// Shared-secret auth. Every route except /health requires the dashboard's
+// Bearer token when ORCH_TOKEN is set; without it any local process (or any
+// webpage, absent the CORS/token pair) could start runs and read the DB.
+const expectedAuth = config.apiToken ? Buffer.from(`Bearer ${config.apiToken}`) : null;
+app.addHook("onRequest", async (req, reply) => {
+  if (!expectedAuth) return; // 토큰 미설정 — 로컬 개발 모드 (부팅 로그에 경고)
+  if (req.url === "/health") return;
+  const got = Buffer.from(req.headers.authorization ?? "");
+  const ok = got.length === expectedAuth.length && timingSafeEqual(got, expectedAuth);
+  if (!ok) return reply.code(401).send({ error: "unauthorized" });
+});
 
 app.get("/health", async () => ({ ok: true }));
 
@@ -48,6 +65,16 @@ app.post("/runs", async (req, reply) => {
   if (parsed.data.agents !== undefined) {
     const invalid = validateAgents(parsed.data.agents);
     if (invalid) return reply.code(400).send({ error: invalid });
+  }
+  // An explicit targetDir becomes the run's trusted workspace root, so it must
+  // sit inside an allowlisted root — reject here, before any run row exists.
+  if (parsed.data.targetDir?.trim()) {
+    try {
+      await assertAllowedTargetDir(parsed.data.targetDir, config.allowedTargetRoots);
+    } catch (err) {
+      if (err instanceof TargetDirError) return reply.code(400).send({ error: err.message });
+      throw err;
+    }
   }
   const id = await startRun(parsed.data);
   return reply.code(201).send({ id });
@@ -149,7 +176,6 @@ app.get("/events", async (req, reply) => {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache",
     Connection: "keep-alive",
-    "Access-Control-Allow-Origin": "*",
   });
   reply.raw.write(`: connected\n\n`);
 
@@ -166,6 +192,11 @@ app.get("/events", async (req, reply) => {
 await app.listen({ port: config.port, host: config.host });
 console.log(`orchestrator listening on http://${config.host}:${config.port}`);
 console.log(`workspaces dir: ${config.workspacesDir}`);
+if (!config.apiToken) {
+  console.warn(
+    "⚠️  ORCH_TOKEN이 설정되지 않아 HTTP API가 무인증으로 열립니다 — 로컬 개발 외에는 루트 .env에 ORCH_TOKEN을 설정하세요."
+  );
+}
 
 // Graceful shutdown so prisma/fastify release cleanly under tsx watch.
 for (const sig of ["SIGINT", "SIGTERM"]) {

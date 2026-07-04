@@ -148,7 +148,8 @@ export function describeTeam(keys: string[]): string {
 // Validate a user-supplied selection STRICTLY — the API boundary rejects what
 // this flags, so unknown keys never reach the DB and an empty list never
 // silently means "전원". Returns a Korean error message, or null when runnable:
-//   - 개발 포함: 기획/검증은 자유 (기획 없음 = 바로 구현, 검증 없음 = 리뷰 생략)
+//   - 개발 포함: 기획/검증은 자유 (기획 없음 = 바로 구현, 검증 없음 = LLM 리뷰
+//     생략 — 단 빌드 게이트는 모든 build run에 항상 실행된다. pipeline/shared.ts)
 //   - 검증만: 프로젝트 현재 상태 감사 (기획/개발 없음)
 //   - 기획만: 계획서만 작성하고 종료
 export function validateAgents(keys: string[]): string | null {

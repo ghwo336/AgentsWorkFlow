@@ -108,15 +108,27 @@ export async function startRun(input: StartInput): Promise<string> {
     autoTeam,
   });
 
-  // Where this run works — the path policy lives in workspace-path.ts.
-  const targetDir = await resolveTargetDir({
-    store,
-    workspacesDir: config.workspacesDir,
-    project,
-    runId: id,
-    targetDir: input.targetDir,
-    workspaceName: input.workspaceName,
-  });
+  // Where this run works — the path/allowlist policy lives in workspace-path.ts.
+  // The HTTP layer pre-validates explicit dirs (→ 400); this is the backstop,
+  // so a disallowed path that slips through fails the run instead of running.
+  let targetDir: string;
+  try {
+    targetDir = await resolveTargetDir({
+      store,
+      workspacesDir: config.workspacesDir,
+      allowedRoots: config.allowedTargetRoots,
+      project,
+      runId: id,
+      targetDir: input.targetDir,
+      workspaceName: input.workspaceName,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const reporter = new DbRunReporter(id);
+    await reporter.log("system", `작업 폴더 오류: ${msg}`, { level: "error" });
+    await reporter.status("failed", { error: msg });
+    throw err;
+  }
   await store.setTargetDir(id, targetDir);
 
   // Fire and forget: the selected team decides the pipeline mode. The pipeline

@@ -12,6 +12,9 @@ services:
       NEXT_TELEMETRY_DISABLED: "1"
       DATABASE_URL: ${DATABASE_URL:-file:./prisma/dev.db}
       ORCH_INTERNAL_URL: ${ORCH_INTERNAL_URL:-http://host.docker.internal:4000}
+      # Shared secret for the orchestrator API (Bearer) — same value the host
+      # orchestrator reads from the root .env.
+      ORCH_TOKEN: ${ORCH_TOKEN:-}
       DASHBOARD_AUTH_REQUIRED: ${DASHBOARD_AUTH_REQUIRED:-true}
       DASHBOARD_USERNAME: ${DASHBOARD_USERNAME:?set DASHBOARD_USERNAME}
       DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD:?set DASHBOARD_PASSWORD}

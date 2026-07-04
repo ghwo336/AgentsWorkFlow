@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { ORCH_URL } from "../../lib/orch";
+import { ORCH_URL, orchHeaders } from "../../lib/orch";
 import { DiffView } from "./DiffView";
 import { agentById, agentForEvent, PixelAvatar, ROLE_COLOR } from "../../lib/agents";
 
@@ -28,7 +28,10 @@ export default async function RunDetail({
 }) {
   const { id } = await params;
   // Fetched from the orchestrator (DB owner) rather than opening SQLite here.
-  const res = await fetch(`${ORCH_URL}/data/runs/${encodeURIComponent(id)}`, { cache: "no-store" });
+  const res = await fetch(`${ORCH_URL}/data/runs/${encodeURIComponent(id)}`, {
+    cache: "no-store",
+    headers: orchHeaders(),
+  });
   if (res.status === 404) notFound();
   if (!res.ok) throw new Error(`run detail → HTTP ${res.status}`);
   const run: RunRow = await res.json();

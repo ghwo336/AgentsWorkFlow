@@ -2,7 +2,8 @@ import type { RunRoster } from "@agent-loop/shared/roster";
 import type { InterventionDecision } from "@agent-loop/shared/types";
 import type { RunReporter } from "../reporter.js";
 import { directBuild } from "./direct-build.js";
-import { build, plan, resumeFromInput } from "./full.js";
+import { build, plan } from "./full.js";
+import { resumeFromInput } from "./intervention.js";
 import { planOnly } from "./plan-only.js";
 import { research } from "./research.js";
 import { verifyOnly } from "./verify-only.js";
@@ -12,7 +13,10 @@ export type { PipelineConfig, PipelineDeps } from "./types.js";
 
 // Facade over the pipeline MODES, each its own module with a single reason to
 // change (SRP):
-//   full.ts          계획 → ★승인 → 단계별 구현/검증/커밋 + 호재 에스컬레이션
+//   full.ts          계획 → ★승인 → 빌드 진입 (승인 게이트 + 재개 지점 계산)
+//   step-runner.ts   단계별 구현/검증/커밋 루프 + 호재 에스컬레이션
+//   intervention.ts  needs_input 재개 (guide/commit/skip/abort)
+//   build-state.ts   재시작-안전 빌드 상태 로드 (DB → 계획/단계/로스터)
 //   direct-build.ts  기획 생략 — brief를 단일 단계로 바로 구현
 //   plan-only.ts     기획만 — 계획서 작성 후 종료
 //   verify-only.ts   검증만 — 프로젝트 현재 상태 감사

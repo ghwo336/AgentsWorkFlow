@@ -2,6 +2,7 @@ import { exec } from "node:child_process";
 import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { gateEnv } from "./gate-env.js";
 import type { Reviewer, VerifyRequest, VerifyResult } from "./types.js";
 
 const pexec = promisify(exec);
@@ -32,6 +33,7 @@ export class BuildGateReviewer implements Reviewer {
     try {
       const { stdout, stderr } = await pexec(cmd, {
         cwd: req.cwd,
+        env: gateEnv(), // repo-controlled script — don't hand it our secrets
         maxBuffer: 16 * 1024 * 1024,
         timeout: 10 * 60 * 1000,
       });

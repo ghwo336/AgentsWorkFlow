@@ -9,8 +9,20 @@ import type { PipelineDeps } from "./types.js";
 
 // The injected reviewer fan-out, narrowed to the run's selected 검증자들.
 // (Reviewer.name is the identity key: 품질/보안/통합/빌드/tests.)
-export function reviewersFor(deps: PipelineDeps, roster: RunRoster): Reviewer[] {
-  return deps.reviewers.filter((r) => roster.reviewerNames.includes(r.name));
+// ensureBuildGate: build 파이프라인은 검증자 선택과 무관하게 빌드 게이트를 항상
+// 포함한다 — LLM 리뷰는 뺄 수 있어도(사용자 선택), "컴파일도 안 되는 커밋"을
+// 막는 결정적·무료 최소 게이트는 자동 개발 루프의 바닥 안전장치라 뺄 수 없다.
+export function reviewersFor(
+  deps: PipelineDeps,
+  roster: RunRoster,
+  opts?: { ensureBuildGate?: boolean }
+): Reviewer[] {
+  const selected = deps.reviewers.filter((r) => roster.reviewerNames.includes(r.name));
+  if (opts?.ensureBuildGate && !selected.some((r) => r.name === "빌드")) {
+    const gate = deps.reviewers.find((r) => r.name === "빌드");
+    if (gate) selected.push(gate);
+  }
+  return selected;
 }
 
 // Which selected builder takes this (global) attempt — retries hand off

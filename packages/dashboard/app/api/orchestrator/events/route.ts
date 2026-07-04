@@ -1,4 +1,4 @@
-import { ORCH_URL } from "../../../lib/orch";
+import { ORCH_URL, orchHeaders } from "../../../lib/orch";
 
 export const dynamic = "force-dynamic";
 
@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 // must keep the response streaming with event-stream headers, and fail fast
 // with a 502 when the upstream isn't there (EventSource retries on its own).
 export async function GET() {
-  const upstream = await fetch(`${ORCH_URL}/events`, { cache: "no-store" });
+  const upstream = await fetch(`${ORCH_URL}/events`, { cache: "no-store", headers: orchHeaders() });
 
   if (!upstream.ok || !upstream.body) {
     return new Response("orchestrator event stream unavailable", { status: 502 });
