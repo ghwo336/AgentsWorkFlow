@@ -66,20 +66,17 @@ export function TeamIntro() {
       <b className="pixel">👋 팀 소개</b>
       <div className="muted small" style={{ margin: "8px 0 14px" }}>
         카드를 누르면 그 팀원의 세부 정보와 개인 하네스(일하는 규칙), 배운 교훈을 볼 수 있어요.
+        📬 표시가 있으면 승인 대기 중인 교훈이 있는 거예요.
       </div>
-      {proposals.length > 0 && (
-        <ProposalInbox
-          proposals={proposals}
-          onResolved={() => api.learningProposals().then(setProposals).catch(() => {})}
-        />
-      )}
       {groups.map((g) => (
         <div key={g.role} style={{ marginBottom: 16 }}>
           <div className="roster-role" style={{ color: ROLE_COLOR[g.role] }}>
             {ROLE_LABEL[g.role]}
           </div>
           <div className="intro-grid">
-            {g.members.map((a) => (
+            {g.members.map((a) => {
+              const pendingCount = proposals.filter((p) => p.agentId === a.id).length;
+              return (
               <button
                 key={a.id}
                 type="button"
@@ -91,6 +88,9 @@ export function TeamIntro() {
                   <div className="row" style={{ gap: 6 }}>
                     <span className="pixel intro-name">{a.name}</span>
                     <span className="intro-engine">{a.engineLabel}</span>
+                    {pendingCount > 0 && (
+                      <span className="nav-badge" title="승인 대기 교훈">📬 {pendingCount}</span>
+                    )}
                   </div>
                   <div className="muted small" style={{ marginTop: 2 }}>
                     {chargeOf(a)}
@@ -98,7 +98,8 @@ export function TeamIntro() {
                   <div className="small intro-blurb">{a.blurb}</div>
                 </div>
               </button>
-            ))}
+              );
+            })}
           </div>
         </div>
       ))}
@@ -110,6 +111,12 @@ export function TeamIntro() {
           agent={agentById(selectedId)}
           harness={harnesses?.[selectedId]}
           learned={learned?.agents?.[selectedId]}
+          proposals={proposals.filter((p) => p.agentId === selectedId)}
+          onResolved={() => {
+            // 승인이 learned 파일에 편입되므로 제안함과 배운 교훈을 함께 갱신.
+            api.learningProposals().then(setProposals).catch(() => {});
+            api.agentLearned().then(setLearned).catch(() => {});
+          }}
           harnessLoading={harnesses === null && !loadError}
           loadError={loadError}
           onClose={() => setSelectedId(null)}
@@ -119,10 +126,11 @@ export function TeamIntro() {
   );
 }
 
-// 제안함 — 회고/리서처가 올린 에이전트 교훈 후보. 승인해야만 그 팀원의 학습
+// 승인 대기 교훈 — 회고/리서처가 올린 그 팀원의 교훈 후보. 승인해야만 학습
 // 파일(learned/agents/<id>.md)에 들어가 프롬프트에 주입된다 — 계획 승인
-// 게이트의 학습판.
-function ProposalInbox({
+// 게이트의 학습판. 소개 탭 최상단이 아니라 팀원 모달 안에 사는 이유: 교훈은
+// 팀원 단위 데이터고, 소개 화면에 액션 큐가 섞이면 탭 성격이 흐려진다.
+function PendingLessons({
   proposals,
   onResolved,
 }: {
@@ -145,60 +153,51 @@ function ProposalInbox({
   }
 
   return (
-    <div style={{ marginBottom: 18 }}>
+    <div className="modal-harness" style={{ marginTop: 12 }}>
       <div className="pixel small" style={{ marginBottom: 6 }}>
-        📬 교훈 제안함 <span className="muted">— 승인해야 팀원이 기억합니다</span>
+        📬 승인 대기 교훈 <span className="muted">— 승인해야 기억해요</span>
       </div>
       <div style={{ display: "grid", gap: 8 }}>
-        {proposals.map((p) => {
-          const who = agentById(p.agentId);
-          return (
-            <div
-              key={p.id}
-              className="row spread"
-              style={{
-                padding: "10px 12px",
-                border: "1px solid var(--border)",
-                borderRadius: 8,
-                gap: 10,
-                alignItems: "flex-start",
-              }}
-            >
-              <div className="row" style={{ gap: 10, minWidth: 0, alignItems: "flex-start" }}>
-                <PixelAvatar agent={who} size={32} />
-                <div style={{ minWidth: 0 }}>
-                  <div className="small">
-                    <span className="pixel">{who.name}</span>
-                    <span className="muted"> · {p.project}</span>
-                  </div>
-                  <div className="small" style={{ marginTop: 4 }}>
-                    <b>[{p.condition}]</b> {p.lesson}
-                  </div>
-                  <div className="muted small" style={{ marginTop: 2 }}>
-                    근거: {p.evidence}
-                  </div>
-                </div>
+        {proposals.map((p) => (
+          <div
+            key={p.id}
+            className="row spread"
+            style={{
+              padding: "10px 12px",
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+              gap: 10,
+              alignItems: "flex-start",
+            }}
+          >
+            <div style={{ minWidth: 0 }}>
+              <div className="muted small">{p.project}</div>
+              <div className="small" style={{ marginTop: 4 }}>
+                <b>[{p.condition}]</b> {p.lesson}
               </div>
-              <div className="row" style={{ gap: 6, flexShrink: 0 }}>
-                <button
-                  type="button"
-                  disabled={busyId !== null}
-                  onClick={() => decide(p.id, "approve")}
-                >
-                  {busyId === p.id ? "…" : "승인"}
-                </button>
-                <button
-                  type="button"
-                  className="ghost"
-                  disabled={busyId !== null}
-                  onClick={() => decide(p.id, "reject")}
-                >
-                  거절
-                </button>
+              <div className="muted small" style={{ marginTop: 2 }}>
+                근거: {p.evidence}
               </div>
             </div>
-          );
-        })}
+            <div className="row" style={{ gap: 6, flexShrink: 0 }}>
+              <button
+                type="button"
+                disabled={busyId !== null}
+                onClick={() => decide(p.id, "approve")}
+              >
+                {busyId === p.id ? "…" : "승인"}
+              </button>
+              <button
+                type="button"
+                className="ghost"
+                disabled={busyId !== null}
+                onClick={() => decide(p.id, "reject")}
+              >
+                거절
+              </button>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -230,6 +229,8 @@ function AgentModal({
   agent,
   harness,
   learned,
+  proposals,
+  onResolved,
   harnessLoading,
   loadError,
   onClose,
@@ -237,6 +238,8 @@ function AgentModal({
   agent: Agent;
   harness: string | undefined;
   learned: string | undefined; // 승인된 교훈 (learned/agents/<id>.md 원문)
+  proposals: LearningProposal[]; // 이 팀원의 승인 대기 교훈만
+  onResolved: () => void;
   harnessLoading: boolean;
   loadError: string | null;
   onClose: () => void;
@@ -301,6 +304,10 @@ function AgentModal({
           )}
         </div>
 
+        {proposals.length > 0 && (
+          <PendingLessons proposals={proposals} onResolved={onResolved} />
+        )}
+
         <div className="modal-harness" style={{ marginTop: 12 }}>
           <div className="pixel small" style={{ marginBottom: 6 }}>
             🧠 배운 교훈 <span className="muted">— learned/agents/{agent.id}.md</span>
@@ -309,7 +316,7 @@ function AgentModal({
             <Markdown className="modal-harness-body">{learned}</Markdown>
           ) : (
             <div className="muted small">
-              아직 승인된 교훈이 없어요 — 제안함에서 승인하면 여기 쌓이고, 작업 프롬프트에 주입돼요.
+              아직 승인된 교훈이 없어요 — 대기 중인 제안을 승인하면 여기 쌓이고, 작업 프롬프트에 주입돼요.
             </div>
           )}
         </div>
