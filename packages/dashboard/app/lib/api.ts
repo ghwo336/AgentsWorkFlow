@@ -47,6 +47,10 @@ export const api = {
 
   listRepos: () => getJson<string[]>("/api/repos", "저장소 목록 로드 실패"),
 
+  // 팀 소개 모달용 — agentId → 하네스 md (agents-config/*.md 원문).
+  agentHarnesses: () =>
+    getJson<Record<string, string>>("/api/orchestrator/agents/harnesses", "하네스 로드 실패"),
+
   setProjectDir: (name: string, defaultTargetDir: string) =>
     sendJson<Project>(
       "PATCH",

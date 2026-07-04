@@ -1,11 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { TeamIntro } from "./_components/TeamIntro";
 import { api } from "./lib/api";
 import { useOrchestratorEvents } from "./lib/useOrchestratorEvents";
 import type { ProjectSummary } from "./lib/types";
 
+type HomeTab = "projects" | "team";
+
 export default function ProjectsHome() {
+  const [tab, setTab] = useState<HomeTab>("projects");
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [newName, setNewName] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -39,6 +43,27 @@ export default function ProjectsHome() {
 
   return (
     <div className="wrap">
+      <div className="viz-tabs home-tabs" style={{ marginBottom: 14 }}>
+        <button
+          type="button"
+          className={`viz-tab${tab === "projects" ? " active" : ""}`}
+          onClick={() => setTab("projects")}
+        >
+          📁 프로젝트
+        </button>
+        <button
+          type="button"
+          className={`viz-tab${tab === "team" ? " active" : ""}`}
+          onClick={() => setTab("team")}
+        >
+          👋 팀 소개
+        </button>
+      </div>
+
+      {tab === "team" && <TeamIntro />}
+
+      {tab === "projects" && (
+        <>
       <form className="panel" onSubmit={create}>
         <b>＋ 새 프로젝트</b>
         <div style={{ height: 8 }} />
@@ -71,6 +96,8 @@ export default function ProjectsHome() {
           )}
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 }

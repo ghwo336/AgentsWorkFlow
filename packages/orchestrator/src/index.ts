@@ -6,6 +6,7 @@ import { validateAgents } from "@agent-loop/shared/roster";
 import { bus } from "./bus.js";
 import { clarify, interveneChatForRun } from "./chat.js";
 import { config } from "./config.js";
+import { registerAgentRoutes } from "./http-agents.js";
 import { registerDataRoutes } from "./http-data.js";
 import { resolveApproval, resolveInput, retryRun, startRun } from "./runner.js";
 import { sweepOrphans } from "./startup-sweep.js";
@@ -22,6 +23,9 @@ app.get("/health", async () => ({ ok: true }));
 // DB read/write API for the dashboard (see http-data.ts — avoids the container
 // touching the SQLite file over a bind mount).
 registerDataRoutes(app);
+
+// Agent roster/harness API (file-backed) for the dashboard's 팀 소개.
+registerAgentRoutes(app);
 
 // Start a new run.
 const StartSchema = z.object({

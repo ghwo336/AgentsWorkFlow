@@ -1,0 +1,178 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import {
+  CAST,
+  PixelAvatar,
+  ROLE_COLOR,
+  ROLE_LABEL,
+  SEATS,
+  agentById,
+  type Agent,
+  type Role,
+} from "../lib/agents";
+import { api } from "../lib/api";
+import { Markdown } from "../lib/Markdown";
+
+// 팀 소개 — the home page's "우리 팀" tab. Everyone from the CAST as clickable
+// cards (grouped 기획/개발/검증); clicking opens a modal with that teammate's
+// details and their REAL harness (agents-config/<id>.md) — the same text the
+// pipeline injects into their prompt, so the intro can never drift from how
+// they actually work.
+
+// What a person is in charge of, from their SEATS rows (전문 분야 for devs,
+// reviewer lenses for verifiers). 주호처럼 좌석이 여러 개면 전부 잇는다.
+function chargeOf(agent: Agent): string {
+  const seats = SEATS.filter((s) => s.agentId === agent.id);
+  const parts = seats.map((s) => {
+    if (s.specialty) return s.specialty;
+    if (s.reviewerNames?.length) {
+      const lenses = s.reviewerNames.filter((n) => n !== "tests").join("·");
+      return `${lenses} 검증`;
+    }
+    return ROLE_LABEL[s.role];
+  });
+  return parts.join(" · ") || agent.roleLabel;
+}
+
+export function TeamIntro() {
+  // Harnesses load once for the whole tab (they're a handful of small md files).
+  const [harnesses, setHarnesses] = useState<Record<string, string> | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .agentHarnesses()
+      .then(setHarnesses)
+      .catch((err) => setLoadError(err instanceof Error ? err.message : "하네스 로드 실패"));
+  }, []);
+
+  const groups: { role: Role; members: Agent[] }[] = (["plan", "build", "verify"] as const).map(
+    (role) => ({ role, members: CAST.filter((a) => a.role === role) })
+  );
+
+  return (
+    <div className="panel">
+      <b className="pixel">👋 팀 소개</b>
+      <div className="muted small" style={{ margin: "8px 0 14px" }}>
+        카드를 누르면 그 팀원의 세부 정보와 개인 하네스(일하는 규칙)를 볼 수 있어요.
+      </div>
+      {groups.map((g) => (
+        <div key={g.role} style={{ marginBottom: 16 }}>
+          <div className="roster-role" style={{ color: ROLE_COLOR[g.role] }}>
+            {ROLE_LABEL[g.role]}
+          </div>
+          <div className="intro-grid">
+            {g.members.map((a) => (
+              <button
+                key={a.id}
+                type="button"
+                className="intro-card"
+                onClick={() => setSelectedId(a.id)}
+              >
+                <PixelAvatar agent={a} size={48} />
+                <div style={{ minWidth: 0, textAlign: "left" }}>
+                  <div className="row" style={{ gap: 6 }}>
+                    <span className="pixel intro-name">{a.name}</span>
+                    <span className="intro-engine">{a.engineLabel}</span>
+                  </div>
+                  <div className="muted small" style={{ marginTop: 2 }}>
+                    {chargeOf(a)}
+                  </div>
+                  <div className="small intro-blurb">{a.blurb}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+      {selectedId && (
+        <AgentModal
+          agent={agentById(selectedId)}
+          harness={harnesses?.[selectedId]}
+          harnessLoading={harnesses === null && !loadError}
+          loadError={loadError}
+          onClose={() => setSelectedId(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function AgentModal({
+  agent,
+  harness,
+  harnessLoading,
+  loadError,
+  onClose,
+}: {
+  agent: Agent;
+  harness: string | undefined;
+  harnessLoading: boolean;
+  loadError: string | null;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div
+        className="modal-card"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${agent.name} 소개`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="row spread" style={{ alignItems: "flex-start" }}>
+          <div className="row" style={{ gap: 14 }}>
+            <PixelAvatar agent={agent} size={72} />
+            <div>
+              <div className="pixel" style={{ fontSize: 18 }}>
+                {agent.name}
+              </div>
+              <div className="small" style={{ color: ROLE_COLOR[agent.role], marginTop: 4 }}>
+                {ROLE_LABEL[agent.role]} · {chargeOf(agent)}
+              </div>
+              <div className="muted small" style={{ marginTop: 2 }}>
+                엔진: {agent.engineLabel}
+              </div>
+            </div>
+          </div>
+          <button type="button" className="ghost" onClick={onClose} aria-label="닫기">
+            ✕
+          </button>
+        </div>
+
+        <div style={{ margin: "12px 0" }}>{agent.blurb}</div>
+
+        <div className="modal-harness">
+          <div className="pixel small" style={{ marginBottom: 6 }}>
+            📜 개인 하네스 <span className="muted">— agents-config/{agent.id}.md</span>
+          </div>
+          {harnessLoading && <div className="muted small">하네스 불러오는 중…</div>}
+          {loadError && (
+            <div className="small" style={{ color: "var(--red)" }}>
+              {loadError}
+            </div>
+          )}
+          {!harnessLoading && !loadError && (
+            harness ? (
+              <Markdown className="modal-harness-body">{harness}</Markdown>
+            ) : (
+              <div className="muted small">
+                개인 하네스 파일이 없어요 — 공용 역할 프롬프트로 일해요.
+              </div>
+            )
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

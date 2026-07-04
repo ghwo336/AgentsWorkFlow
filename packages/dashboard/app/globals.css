@@ -161,7 +161,9 @@ textarea:focus, input:focus, select:focus { outline: none; border-color: var(--a
 
 /* Rendered markdown (agent prose). Compact block spacing so it sits tightly in
    chat bubbles and panels; code/links themed to match. */
-.md { font-size: 12.5px; line-height: 1.55; white-space: normal; }
+/* break-word: 에이전트 산문에는 긴 무공백 토큰(파일 경로·URL·인라인 코드)이
+   흔해서, 없으면 plan-preview/하네스 모달 등 컨테이너를 옆으로 뚫는다. */
+.md { font-size: 12.5px; line-height: 1.55; white-space: normal; overflow-wrap: break-word; }
 .md > :first-child { margin-top: 0; }
 .md > :last-child { margin-bottom: 0; }
 .md p { margin: 0 0 8px; }
@@ -201,6 +203,9 @@ textarea:focus, input:focus, select:focus { outline: none; border-color: var(--a
   display: flex; flex-direction: column; gap: 4px;
 }
 .log .line { display: flex; gap: 8px; align-items: center; }
+/* 메시지(마지막 칸)는 줄어들 수 있어야(min-width:0) 긴 경로/URL이 로그 패널을
+   옆으로 밀지 않고 안에서 꺾인다. */
+.log .line > :last-child { min-width: 0; overflow-wrap: anywhere; }
 .log .ph { color: var(--muted); min-width: 64px; }
 .log .err { color: var(--red); }
 .log .warn { color: var(--yellow); }
@@ -469,6 +474,46 @@ td, th { text-align: left; padding: 8px; border-bottom: 1px solid var(--border);
 .plan-trow.plan-passed { background: rgba(87, 217, 154, .06); }
 .plan-trow.plan-failed { background: rgba(255, 107, 125, .08); }
 .plan-trow.plan-pending { opacity: .72; }
+
+/* ── 팀 소개 (home tab + agent detail modal) ─────────────────────── */
+.home-tabs .viz-tab { font-size: 13px; padding: 6px 14px; }
+
+.intro-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px; margin-top: 6px;
+}
+.intro-card {
+  display: flex; gap: 10px; align-items: flex-start;
+  background: var(--panel-2); border: 2px solid var(--border); border-radius: 8px;
+  padding: 10px 12px; color: var(--text); cursor: pointer; text-align: left;
+  font: inherit; box-shadow: none;
+  white-space: normal; /* 전역 button nowrap 해제 — 소개 문장은 줄바꿈되어야 함 */
+  min-width: 0; overflow-wrap: anywhere;
+}
+.intro-card:hover { border-color: var(--accent); transform: none; }
+.intro-name { font-size: 13px; }
+.intro-engine {
+  font-family: var(--pixel); font-size: 10px; color: var(--muted);
+  border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px;
+}
+.intro-blurb { margin-top: 4px; line-height: 1.45; }
+
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgba(8, 10, 16, 0.72);
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+.modal-card {
+  background: var(--panel); border: 2px solid var(--border); border-radius: 10px;
+  box-shadow: var(--px-shadow);
+  width: min(640px, 100%); max-height: min(80vh, 720px);
+  padding: 18px; overflow-y: auto;
+}
+.modal-harness {
+  border: 2px solid var(--border); border-radius: 8px;
+  background: var(--panel-2); padding: 12px;
+}
+.modal-harness-body { max-height: 340px; overflow-y: auto; font-size: 13px; }
 
 @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
 .blink { animation: blink 1s ease-in-out infinite; display: inline-flex; }
