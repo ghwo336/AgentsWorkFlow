@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api } from "../../lib/api";
+import { api, ApiError } from "../../lib/api";
 import { errMsg } from "../../lib/err";
 import { useOrchestratorEvents } from "../../lib/hooks/useOrchestratorEvents";
 import type {
@@ -43,10 +43,13 @@ export function useWorkspace(project: string, initial?: WorkspaceInitial) {
   // 선택 변경 효과가 같은 상세를 이중 페치하지 않게.
   const detailIdRef = useRef<string | null>(initial?.detail?.id ?? null);
 
-  // Errors from orchestrator actions add a hint to check the connection.
+  // Errors from orchestrator actions add a hint to check the connection —
+  // 단, 서버가 이유를 담아 응답한 상태 오류(ApiError, 예: 409 재개 불가)에는
+  // 붙이지 않는다. 연결은 멀쩡한데 "연결을 확인하세요"라고 오도했던 문제.
   const fail = useCallback((err: unknown, fallback: string, hint = false) => {
     const base = errMsg(err, fallback);
-    setError(hint ? `${base} - dashboard 서버의 orchestrator 연결을 확인하세요.` : base);
+    const connectivity = hint && !(err instanceof ApiError);
+    setError(connectivity ? `${base} - dashboard 서버의 orchestrator 연결을 확인하세요.` : base);
   }, []);
 
   const loadRuns = useCallback(async () => {
@@ -214,6 +217,8 @@ export function useWorkspace(project: string, initial?: WorkspaceInitial) {
 
   // 아래 액션들은 모두 대상 run id를 명시적으로 받는다 — 작업 탭(선택된 run)과
   // 기획 피드(카드마다 다른 run)가 같은 배선을 쓰기 위해.
+  // 실패는 배너를 띄운 뒤 다시 던진다 — 버튼 busy 상태(useBusyAction)는 throw로만
+  // 실패를 알 수 있어서, 삼키면 버튼이 "⏳ 재개 중…"에 영원히 갇힌다.
   const decide = useCallback(
     async (runId: string, approved: boolean, editedPlan?: string) => {
       try {
@@ -223,6 +228,7 @@ export function useWorkspace(project: string, initial?: WorkspaceInitial) {
         refreshAfterAction(runId);
       } catch (err) {
         fail(err, "승인/거절 요청 실패", true);
+        throw err;
       }
     },
     [refreshAfterAction, fail]
@@ -237,6 +243,7 @@ export function useWorkspace(project: string, initial?: WorkspaceInitial) {
         refreshAfterAction(runId);
       } catch (err) {
         fail(err, "수정 요청 실패", true);
+        throw err;
       }
     },
     [refreshAfterAction, fail]
@@ -251,6 +258,7 @@ export function useWorkspace(project: string, initial?: WorkspaceInitial) {
         refreshAfterAction(runId);
       } catch (err) {
         fail(err, "재개 요청 실패", true);
+        throw err;
       }
     },
     [refreshAfterAction, fail]
@@ -265,6 +273,7 @@ export function useWorkspace(project: string, initial?: WorkspaceInitial) {
         refreshAfterAction(runId);
       } catch (err) {
         fail(err, "다시 진행 요청 실패", true);
+        throw err;
       }
     },
     [refreshAfterAction, fail]

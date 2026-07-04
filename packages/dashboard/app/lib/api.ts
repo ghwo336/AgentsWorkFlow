@@ -38,9 +38,27 @@ export interface LearningProposal {
 // the no-store cache policy, and consistent (Korean) error messages so pages
 // and hooks never construct a raw fetch (SRP — one reason to change: the API).
 
+// 서버가 상태 코드로 응답한 오류 — 네트워크 단절(fetch 자체가 throw)과 구분해
+// 화면이 "연결을 확인하세요" 같은 엉뚱한 힌트를 붙이지 않을 수 있게 한다.
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
+
+// 상태 오류를 ApiError로 — 본문의 { error } 문구가 있으면 함께 보여준다.
+// (409 "재개 불가" 같은 건 연결 문제가 아니라 서버가 말해주는 이유가 있다.)
+async function toApiError(r: Response, errLabel: string): Promise<ApiError> {
+  const detail = await r
+    .json()
+    .then((b: { error?: unknown }) => (typeof b?.error === "string" ? b.error : null))
+    .catch(() => null);
+  return new ApiError(detail ? `${errLabel} (${r.status}) — ${detail}` : `${errLabel} (${r.status})`, r.status);
+}
+
 async function getJson<T>(url: string, errLabel: string): Promise<T> {
   const r = await fetch(url, { cache: "no-store" });
-  if (!r.ok) throw new Error(`${errLabel} (${r.status})`);
+  if (!r.ok) throw await toApiError(r, errLabel);
   return r.json() as Promise<T>;
 }
 
@@ -55,7 +73,7 @@ async function sendJson<T>(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (!r.ok) throw new Error(`${errLabel} (${r.status})`);
+  if (!r.ok) throw await toApiError(r, errLabel);
   return r.json().catch(() => ({})) as Promise<T>;
 }
 

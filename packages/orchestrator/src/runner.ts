@@ -287,8 +287,9 @@ export async function followUpResearch(
 
 // Re-open a run that ended (rejected/failed) or is parked (needs_input) and
 // continue the build from where it stopped — pipeline.build resumes at the first
-// not-yet-committed step, now with the full retry + 호재 escalation ladder. Needs
-// an approved plan to resume; returns false (→ 409) otherwise.
+// not-yet-committed step, now with the full retry + 호재 escalation ladder.
+// 계획이 아직 없는 run(기획 도중 재시작 등으로 죽음)은 빌드 대신 기획을 처음부터
+// 다시 시작한다 — 예전엔 이 경우 409를 돌려줘 재개 버튼이 막혔다.
 const RESUMABLE = new Set(["rejected", "failed", "needs_input"]);
 export async function retryRun(runId: string): Promise<boolean> {
   const st = await store.getResumeState(runId);
@@ -310,7 +311,26 @@ export async function retryRun(runId: string): Promise<boolean> {
     return true;
   }
 
-  if (!st.plan) return false;
+  // 계획이 없으면 기획 단계에서 죽은 것 — 기획부터 다시. (direct는 시작 시
+  // brief가 plan으로 저장되므로 여기 오면 full/planOnly뿐이다.)
+  if (!st.plan) {
+    const mode = runModeOf(roster);
+    if (mode !== "full" && mode !== "planOnly") return false;
+    await reporter.log("approval", "사용자가 작업을 다시 진행합니다 — 기획을 다시 시작합니다.");
+    if (mode === "planOnly") {
+      pipeline.planOnly(runId, st.brief, st.targetDir, reporter).catch(onFatal(reporter));
+    } else {
+      pipeline
+        .plan(runId, st.brief, st.targetDir, reporter, {
+          suggestTeam: st.autoTeam,
+          // 자동 배치 run은 호재가 팀을 다시 정하므로 전원을 배정 후보로.
+          builderIds: st.autoTeam ? rosterOf(null).builderIds : roster.builderIds,
+        })
+        .catch(onFatal(reporter));
+    }
+    return true;
+  }
+
   await reporter.log("approval", "사용자가 작업을 다시 진행합니다 — 멈춘 지점부터 재개합니다.");
   await reporter.status("building");
   pipeline.build(runId, reporter).catch(onFatal(reporter));

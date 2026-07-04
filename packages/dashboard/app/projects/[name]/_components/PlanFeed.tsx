@@ -354,6 +354,8 @@ export function PlanFeed({
         if (!ok) return; // 실패 배너는 상위(useWorkspace)가 띄운다 — 입력은 보존
       }
       setInput("");
+    } catch {
+      // 액션 실패 — 배너는 상위(useWorkspace)가 띄웠고, 입력은 보존.
     } finally {
       setBusy(null);
     }
@@ -365,6 +367,8 @@ export function PlanFeed({
       setBusy(key);
       try {
         await fn();
+      } catch {
+        // 실패 배너는 상위(useWorkspace)가 띄운다 — 여기선 busy만 푼다.
       } finally {
         setBusy(null);
       }
