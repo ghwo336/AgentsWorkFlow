@@ -211,6 +211,27 @@ export function Workspace({
           )}
           {detail && (
             <>
+              {/* 작업 탭 안에서 바로 다른(이전) 작업으로 이동 — 개요 탭으로
+                  나가지 않아도 되게. 작업이 둘 이상일 때만 노출. */}
+              {runs.length > 1 && (
+                <div className="row" style={{ gap: 8, alignItems: "center", marginBottom: 10 }}>
+                  <span className="muted small" style={{ whiteSpace: "nowrap" }}>
+                    🔨 작업 이동:
+                  </span>
+                  <select
+                    value={selected ?? ""}
+                    onChange={(e) => setSelected(e.target.value)}
+                    style={{ flex: 1, minWidth: 0 }}
+                    title="다른 작업으로 이동"
+                  >
+                    {runs.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.title} · {r.status}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <RunDetailCard detail={detail} />
               <RunProgress detail={detail} />
               {detail.status === "awaiting_approval" && (
