@@ -226,7 +226,7 @@ td, th { text-align: left; padding: 8px; border-bottom: 1px solid var(--border);
 .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
 /* ── Agent chips / roster ───────────────────────────────────────── */
-.agent-chip { display: inline-flex; align-items: center; gap: 6px; }
+.agent-chip { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .agent-chip-name { font-family: var(--pixel); font-size: 12px; }
 
 /* Pixel characters have a quiet idle loop everywhere, then a sharper
@@ -370,9 +370,12 @@ td, th { text-align: left; padding: 8px; border-bottom: 1px solid var(--border);
 /* list rows */
 .step-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 2px solid var(--border); border-radius: 6px; background: var(--panel-2); }
 .step-dot { width: 8px; height: 8px; border-radius: 999px; flex: 0 0 auto; }
-.step-label { font-weight: 500; }
+/* 좁은 컬럼에서 줄어드는 쪽은 요약문(ellipsis) 하나뿐 — 라벨/담당 칩이
+   줄어들면 CJK가 한 글자씩 세로로 꺾여 버린다. */
+.step-label { font-weight: 500; white-space: nowrap; flex: 0 0 auto; }
+.step-row .agent-chip { flex: 0 0 auto; }
 .step-spacer { flex: 1 1 auto; }
-.step-summary { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.step-summary { max-width: 320px; min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* agent work summary */
 .agent-summary-list { display: flex; flex-direction: column; gap: 10px; }
