@@ -91,6 +91,9 @@ export type RunDetail = Run & {
   verdicts: unknown[];
   steps: Step[];
   chatMsgs: ChatMsg[];
+  // 전체 행 수 — events/chatMsgs가 최신 N개로 잘려 왔을 때 "더보기" 잔여 계산용.
+  eventsTotal?: number;
+  chatTotal?: number;
 };
 
 // One turn in the pre-plan requirements chat (client-held history).

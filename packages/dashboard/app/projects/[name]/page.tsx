@@ -109,14 +109,14 @@ export default function ProjectWorkspace() {
               {detail.status === "committed" && (
                 <FollowUpPanel baseTitle={detail.title} commit={detail.commit} onStart={start} />
               )}
-              <AgentChat msgs={detail.chatMsgs ?? []} />
+              <AgentChat runId={detail.id} msgs={detail.chatMsgs ?? []} total={detail.chatTotal} />
               <AgentWorkSummary
                 steps={detail.steps}
                 status={detail.status}
                 plan={detail.plan ?? undefined}
               />
               <RunViz steps={detail.steps} status={detail.status} />
-              <LiveLog events={detail.events} />
+              <LiveLog runId={detail.id} events={detail.events} total={detail.eventsTotal} />
             </>
           )}
         </div>

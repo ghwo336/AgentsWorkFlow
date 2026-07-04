@@ -1,12 +1,19 @@
 import type {
   ChatMessage,
+  ChatMsg,
   InterventionDecision,
   Project,
   ProjectSummary,
   Run,
   RunDetail,
+  RunEvent,
   StartRunInput,
 } from "./types";
+
+// 라이브 뷰의 페이지 크기. 로그는 한 줄짜리라 넉넉히(30), 대화는 보고서
+// 전문이 실려 무거우니 10 — "더보기"도 같은 단위로 가져온다.
+export const LOG_PAGE = 30;
+export const CHAT_PAGE = 10;
 
 // Single place that talks to the backend HTTP API. Centralizes URL building,
 // the no-store cache policy, and consistent (Korean) error messages so pages
@@ -62,7 +69,26 @@ export const api = {
   listRuns: (project: string) =>
     getJson<Run[]>(`/api/runs?project=${encodeURIComponent(project)}`, "작업 목록 로드 실패"),
 
-  getRun: (id: string) => getJson<RunDetail>(`/api/runs/${id}`, "작업 상세 로드 실패"),
+  // 라이브 뷰용 상세 — SSE 이벤트마다 다시 받으므로 최신 로그/대화만 가져온다
+  // (verdicts=0: diff가 실려 무겁고 라이브 뷰에선 안 쓴다). 과거분은 아래
+  // olderRunEvents/olderRunChat으로 "더보기" 페이징.
+  getRun: (id: string) =>
+    getJson<RunDetail>(
+      `/api/runs/${id}?eventsTake=${LOG_PAGE}&chatTake=${CHAT_PAGE}&verdicts=0`,
+      "작업 상세 로드 실패"
+    ),
+
+  olderRunEvents: (id: string, before: string) =>
+    getJson<RunEvent[]>(
+      `/api/runs/${id}/events?before=${encodeURIComponent(before)}&take=${LOG_PAGE}`,
+      "이전 로그 로드 실패"
+    ),
+
+  olderRunChat: (id: string, before: string) =>
+    getJson<ChatMsg[]>(
+      `/api/runs/${id}/chat?before=${encodeURIComponent(before)}&take=${CHAT_PAGE}`,
+      "이전 대화 로드 실패"
+    ),
 
   // Pre-plan requirements chat: send the whole thread, get Opus's next reply.
   chat: (messages: ChatMessage[]) =>

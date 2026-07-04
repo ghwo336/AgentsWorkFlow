@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { agentForChat, PixelAvatar, ROLE_COLOR } from "../../../lib/agents";
+import { api, CHAT_PAGE } from "../../../lib/api";
 import { Markdown } from "../../../lib/Markdown";
+import { usePagedRows } from "../../../lib/usePagedRows";
 import type { ChatMsg } from "../../../lib/types";
 
 // What each turn is, as a short tag next to the speaker.
@@ -26,25 +28,59 @@ const TO_LABEL: Record<string, string> = {
 // The team's conversation as they work each step: builder reports what it did,
 // verifiers reply with their verdict, 호재 drops in with a fix plan on escalation,
 // and the user's guidance shows up too. Reads top-to-bottom like a chat room.
-export function AgentChat({ msgs }: { msgs: ChatMsg[] }) {
+// The detail payload carries only the latest CHAT_PAGE turns — older turns page
+// in via the 더보기 button on top.
+export function AgentChat({
+  runId,
+  msgs,
+  total,
+}: {
+  runId: string;
+  msgs: ChatMsg[];
+  total?: number;
+}) {
   const endRef = useRef<HTMLDivElement>(null);
+
+  const fetchOlder = useCallback((before: string) => api.olderRunChat(runId, before), [runId]);
+  const { rows, more, loading, loadOlder } = usePagedRows(runId, msgs, total, fetchOlder);
+
+  // 과거 대화를 앞에 붙인 직후엔 바닥으로 스크롤하지 않는다 (위를 읽는 중).
+  const prepended = useRef(false);
+  const loadOlderKeepScroll = useCallback(async () => {
+    prepended.current = true;
+    await loadOlder();
+  }, [loadOlder]);
   useEffect(() => {
+    if (prepended.current) {
+      prepended.current = false;
+      return;
+    }
     endRef.current?.scrollIntoView({ block: "nearest" });
-  }, [msgs.length]);
+  }, [rows.length]);
 
   return (
     <div className="panel">
       <div className="row spread" style={{ marginBottom: 10 }}>
         <b>💬 에이전트 대화</b>
-        <span className="muted small">{msgs.length}개</span>
+        <span className="muted small">{total ?? rows.length}개</span>
       </div>
-      {msgs.length === 0 ? (
+      {rows.length === 0 ? (
         <div className="muted small">아직 대화가 없습니다. 구현이 시작되면 팀이 여기서 의견을 주고받아요.</div>
       ) : (
         <div className="agent-chat">
-          {msgs.map((m, i) => {
+          {more > 0 && (
+            <button
+              className="ghost small"
+              style={{ boxShadow: "none", padding: "2px 8px", alignSelf: "center" }}
+              disabled={loading}
+              onClick={loadOlderKeepScroll}
+            >
+              {loading ? "불러오는 중…" : `▴ 이전 대화 ${Math.min(CHAT_PAGE, more)}개 더보기 (${more}개 남음)`}
+            </button>
+          )}
+          {rows.map((m, i) => {
             const agent = agentForChat(m);
-            const prev = msgs[i - 1];
+            const prev = rows[i - 1];
             const showStep = m.stepLabel && m.stepLabel !== prev?.stepLabel;
             const verifyFail = m.kind === "verify" && m.passed === false;
             const verifyPass = m.kind === "verify" && m.passed === true;
