@@ -13,7 +13,8 @@
     "db:push": "prisma db push",
     "orchestrator": "npm -w @agent-loop/orchestrator run dev",
     "dashboard": "npm -w @agent-loop/dashboard run dev",
-    "dev": "concurrently -n orch,dash -c blue,green \"npm run orchestrator\" \"npm run dashboard\""
+    "dev": "concurrently -n orch,dash -c blue,green \"npm run orchestrator\" \"npm run dashboard\"",
+    "test": "npm run test --workspaces --if-present"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",
