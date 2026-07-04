@@ -62,6 +62,8 @@ agent-loop/
 | 검증 | verify:donghwan | 동환 — 보안 감사 | codex |
 | 검증 | verify:yujun | 유준 — 통합/런타임 배선 | Claude |
 | 검증 | verify:seongho | 성호 — 빌드/타입체크 실행 | system(무료·결정적) |
+| 리서치 | research:sanghyun | 상현 — X(트위터) 실시간 검색 | Grok (Build CLI, 구독 OAuth) |
+| 리서치 | research:yerim | 예림 — X 밖 웹 전반 조사 | Opus |
 
 ## packages/orchestrator — 파이프라인 + API 서버
 
@@ -71,9 +73,10 @@ agent-loop/
 
 | 파일 | 책임 |
 |---|---|
-| `index.ts` | Fastify 서버 — 라우트 + zod 검증 + 위임만. `POST /runs`(agents 좌석 키 엄격 검증), approve/resume/retry, `/chat`, `/runs/:id/intervene-chat`, `GET /events`(SSE), `/data/*` |
+| `index.ts` | Fastify 서버 — 라우트 + zod 검증 + 위임만. `POST /runs`(agents 좌석 키 엄격 검증), approve/resume/retry, `/runs/:id/research-followup`(리서치 후속 질문), `/chat`, `/runs/:id/intervene-chat`, `GET /events`(SSE), `/data/*` |
+| `http-agents.ts` | 파일 기반 에이전트 API — 하네스(`/data/agents/harnesses`) · 학습 노트(`/data/agents/learned`) · 제안함 조회/승인(`/data/learning/proposals`) |
 | `http-data.ts` | 대시보드용 읽기 데이터 API (`/data/runs`, `/data/usage`, `/data/projects` …) — 컨테이너가 SQLite를 직접 열지 않게 하는 프록시 지점 |
-| `runner.ts` | **컴포지션 루트 + 유스케이스.** 리뷰어 팬아웃·개발자별 빌더(하네스 장착)·플래너를 조립하고 `startRun`(runModeOf로 모드 디스패치)/`resolveApproval`/`resolveInput`/`retryRun` export |
+| `runner.ts` | **컴포지션 루트 + 유스케이스.** 리뷰어 팬아웃·개발자별 빌더(하네스 장착)·플래너·리서처 팬아웃(상현 Grok/예림 Claude)·회고를 조립하고 `startRun`(runModeOf로 모드 디스패치)/`resolveApproval`/`resolveInput`/`retryRun`/`followUpResearch` export |
 | `workspace-path.ts` | 워크스페이스 경로 정책 — 명시 경로 → 이름 워크스페이스 → 프로젝트 기본 폴더(기억) |
 | `chat.ts` | 대화 서비스 — 사전 요구사항 정리(`clarify`), 막힌 run 상의(`interveneChatForRun` — 컨텍스트 조립 포함) |
 | `config.ts` | 환경변수/기본값 (모델, 재시도 횟수, REVIEW_POLICY, TEST_CMD …) |
@@ -86,21 +89,29 @@ deps 바인딩+위임만 하는 `RunPipeline` 파사드.
 
 | 파일 | 모드/책임 |
 |---|---|
-| `full.ts` | 기본: 계획 → ★승인 → 단계별 구현/검증/커밋 루프 + 호재 에스컬레이션 사다리 + needs_input 재개 |
+| `full.ts` | 기본: 계획 → ★승인 → 빌드 진입 (승인 게이트 + 재개 지점 계산) |
+| `step-runner.ts` | 단계별 구현/검증/커밋 루프 + 호재 에스컬레이션 사다리 + 학습 노트 주입/실패 이력 수집 |
+| `intervention.ts` | needs_input 재개 (guide/commit/skip/abort) |
+| `build-state.ts` | 재시작-안전 빌드 상태 로드 (DB → 계획/단계/로스터/프로젝트) |
 | `direct-build.ts` | 기획 생략: brief를 단일 단계로 바로 구현 |
 | `plan-only.ts` | 기획만: 계획서 작성 후 종료 |
 | `verify-only.ts` | 검증만: 프로젝트 **현재 상태 감사** (reviewPolicy 무시, 전원 통과 강제) |
+| `research.ts` | 리서치: 리서처 팬아웃(상현 X + 예림 웹 동시 조사) + 후속 질문(`researchFollowUp`) — 완료 상태는 `reported` |
+| `reflection.ts` | run 종료 후 회고 — 실패 이력에서 교훈 추출 → learn-store 저장/제안 |
 | `team-staffing.ts` | 팀 스태핑 정책 — 호재 추천 정제·단계 배정 개발자 합류·무효 배정 정리 |
 | `shared.ts` | 공유 협력자 — 리뷰 팬아웃(`runReviewFanout`), 계획 스텝(`planOnce`), 로스터 유틸 |
-| `types.ts` | `PipelineDeps`(planner/builder(s)/reviewers/git/store/config) |
+| `types.ts` | `PipelineDeps`(planner/builder(s)/reviewers/researchers/reflector/git/store/config) |
 
 ### agents/ — 엔진 어댑터
 
 | 파일 | 책임 |
 |---|---|
-| `types.ts` | `Planner` · `Builder` · `Reviewer` 인터페이스(ISP) + `PlanResult`(파싱 완료된 계획) |
-| `claude-agent.ts` | `ClaudePlanner`/`ClaudeBuilder` — SDK **스트리밍** 어댑터 (로그를 타임라인에 실시간 방출) |
-| `claude-query.ts` | 비스트리밍 SDK 호출 공용 헬퍼 (`queryFinalText`) — chat/리뷰어가 사용 |
+| `types.ts` | `Planner` · `Builder` · `Reviewer` · `Researcher` 인터페이스(ISP) + `PlanResult`(파싱 완료된 계획) |
+| `claude-agent.ts` | `ClaudePlanner`/`ClaudeBuilder`/`ClaudeResearcher`(예림) — SDK **스트리밍** 어댑터 (로그를 타임라인에 실시간 방출) + 학습 노트 블록 |
+| `grok-agent.ts` | `GrokResearcher`(상현) — Grok Build CLI 헤드리스 spawn (X 구독 OAuth, search_x로 X 실시간 검색) |
+| `learn-store.ts` | **팀 학습 저장소** — `agents-config/learned/` (프로젝트 노트 자동 축적 · 에이전트 교훈 제안함/승인) |
+| `reflector.ts` (+learning.test) | `ClaudeReflector` — run 실패 이력 → `{조건, 교훈, 근거}` 추출 (무조건 규칙 거부) |
+| `claude-query.ts` | 비스트리밍 SDK 호출 공용 헬퍼 (`queryFinalText`) — chat/리뷰어/회고가 사용 |
 | `plan-format.ts` (+test) | 계획 출력 포맷의 **정의(프롬프트)와 파서를 한 모듈에** — \`\`\`steps(단계+담당 dev) / \`\`\`team(팀 추천) 블록 |
 | `review-policy.ts` | 모든 LLM 리뷰어 공용 판정 규칙서 + 렌즈(`QUALITY_LENS`/`SECURITY_LENS`) |
 | `codex-agent.ts` | `CodexVerifier` — codex exec 호출/판정·토큰 파싱. 렌즈별 인스턴스(주호·동환) |
@@ -120,10 +131,15 @@ deps 바인딩+위임만 하는 `RunPipeline` 파사드.
 | `bus.ts` | 인프로세스 pub/sub — SSE 라우트가 구독 |
 | `git.ts` | `GitOps` — run별 격리 저장소(ensureRepo), 리뷰 diff(잠금파일 제외), 커밋 |
 
-### agents-config/ — 에이전트별 하네스 (md, 코드 아님)
+### agents-config/ — 에이전트별 하네스 + 팀 학습 노트 (md, 코드 아님)
 
 `<agentId>.md` = 그 팀원의 개인 시스템 프롬프트 확장 (전문 분야·우선순위·금지사항).
-개발자 5명 + 호재 + 검증자 3명(성호는 모델 없음 → 없음). **수정 후 orchestrator 재시작 필요.**
+개발자 5명 + 호재 + 검증자 3명(성호는 모델 없음 → 없음) + 리서처 2명(상현·예림).
+**하네스 수정 후 orchestrator 재시작 필요.**
+
+`learned/` = 팀이 일하며 스스로 쌓는 기억 (run마다 재로드 — 재시작 불필요):
+`projects/<프로젝트>.md`(회고 자동 축적) · `agents/<id>.md`(제안함 승인분만) ·
+`proposals.json`(승인 대기 큐). 자세한 규칙은 agents-config/README.md.
 
 ## packages/dashboard — Next.js 웹 UI
 
@@ -132,7 +148,11 @@ DB를 직접 열지 않는다 — 모든 데이터는 orchestrator HTTP(`/data/*
 ```
 app/
 ├── layout.tsx / globals.css      # 공통 레이아웃·스타일
-├── page.tsx                      # 홈: 프로젝트 목록
+├── page.tsx                      # 홈 (SSR 목록 → HomeClient)
+├── _components/
+│   ├── HomeClient.tsx            # 홈 탭: 📁 프로젝트 / 🔍 리서치 / 👋 팀 소개
+│   ├── ResearchTab.tsx           # 리서치 — 탭=대화 스레드, 상현·예림 팬아웃 + 후속 질문
+│   └── TeamIntro.tsx             # 팀 소개 — 하네스·배운 교훈·교훈 제안함(승인/거절)
 ├── lib/
 │   ├── types.ts                  # 클라이언트 뷰모델 (Run에 agents/stepDevs 포함)
 │   ├── api.ts                    # 백엔드 호출 단일 창구
@@ -178,6 +198,7 @@ app/
 | direct | 개발만 | 승인 없이 바로 구현 |
 | verifyOnly | 검증자만 | 프로젝트 현재 상태 감사 (전원 통과 필요) |
 | planOnly | 호재만 | 계획서 작성 후 종료 |
+| research | 리서처만(복수 가능) | 리서처 팬아웃 조사 → `reported` → 후속 질문으로 대화 계속 |
 
 `agents` 필드를 **생략**하면 자동 배치(autoTeam): 호재가 계획하며 팀을 추천하고
 단계마다 담당 개발자를 배정한다(\`\`\`steps의 dev). 기획+검증(개발 없음)은 불가 조합.
@@ -188,6 +209,6 @@ app/
   코드 수정 후 `launchctl kickstart -k` 필요)
 - **dashboard**: Docker 컨테이너 (`docker compose -f docker-compose.dashboard.yml up -d --build`)
 - 외부 공개: Cloudflare Tunnel → `agent.pelicanlab.dev` (Basic Auth)
-- 테스트: `npm -w @agent-loop/orchestrator test` (workspace-guard 27 + plan-format 6)
+- 테스트: `npm -w @agent-loop/orchestrator test` (workspace-guard + plan-format + 학습 파서, 49개)
 
 자세한 절차는 [docs/deploy-dashboard.md](deploy-dashboard.md) 참고.
