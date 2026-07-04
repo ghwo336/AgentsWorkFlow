@@ -7,12 +7,13 @@ import { api } from "../lib/api";
 // 전역 네비 — 앱의 최상위 섹션 전부를 한 줄에. 예전엔 상단(영어 Projects/
 // History/Usage)과 홈 안 탭(프로젝트/리서치/팀)으로 갈려 있었는데, 같은 급의
 // 목적지를 두 바에 나눠 담아 헷갈렸다. 이제 5개 모두 진짜 라우트 + 한 바.
+// 아이콘/텍스트를 분리해 두면 모바일에서 세로 쌓기(아이콘 위·글자 아래)가 된다.
 const SECTIONS = [
-  { href: "/", label: "📁 프로젝트", match: (p: string) => p === "/" || p.startsWith("/projects") },
-  { href: "/research", label: "🔍 리서치", match: (p: string) => p.startsWith("/research") },
-  { href: "/team", label: "👋 팀", match: (p: string) => p.startsWith("/team") },
-  { href: "/history", label: "🗂 히스토리", match: (p: string) => p.startsWith("/history") },
-  { href: "/usage", label: "📊 사용량", match: (p: string) => p.startsWith("/usage") },
+  { href: "/", icon: "📁", text: "프로젝트", match: (p: string) => p === "/" || p.startsWith("/projects") },
+  { href: "/research", icon: "🔍", text: "리서치", match: (p: string) => p.startsWith("/research") },
+  { href: "/team", icon: "👋", text: "팀", match: (p: string) => p.startsWith("/team") },
+  { href: "/history", icon: "🗂", text: "히스토리", match: (p: string) => p.startsWith("/history") },
+  { href: "/usage", icon: "📊", text: "사용량", match: (p: string) => p.startsWith("/usage") },
 ] as const;
 
 // 제안함 배지 동기화용 이벤트 — TeamIntro가 승인/거절 직후 쏘면 배지가 다시
@@ -44,7 +45,8 @@ export function NavLinks() {
             className={`nav-link${active ? " active" : ""}`}
             aria-current={active ? "page" : undefined}
           >
-            {s.label}
+            <span className="nav-ico" aria-hidden>{s.icon}</span>
+            <span className="nav-text">{s.text}</span>
             {s.href === "/team" && pending > 0 && (
               <span className="nav-badge" aria-label={`승인 대기 교훈 ${pending}건`}>
                 {pending}

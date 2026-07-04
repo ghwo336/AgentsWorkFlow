@@ -49,22 +49,46 @@ a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
 .nav {
-  display: flex; gap: 16px; align-items: center;
   padding: 12px 20px;
   border-bottom: 2px solid var(--border);
   background: linear-gradient(var(--panel), var(--panel-2));
+}
+/* 네비 안쪽을 본문(.wrap)과 같은 1100px 컬럼에 맞춰 로고·탭·콘텐츠의
+   시작 세로선을 통일 — 넓은 화면에서 네비만 왼쪽에 떠 보이던 문제. */
+.nav-inner {
+  display: flex; gap: 16px; align-items: center;
+  max-width: 1100px; margin: 0 auto;
 }
 .nav b { font-size: 15px; }
 .nav .logo { display: inline-flex; align-items: center; gap: 8px; margin-right: 8px; }
 
 /* 전역 섹션 네비 — 예전 상단 링크 + 홈 탭을 하나로 합친 알약 바. */
-.nav-links { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.nav-links { display: inline-flex; align-items: center; gap: 6px; }
 .nav-link {
+  position: relative; /* 모바일 배지 앵커 */
+  display: inline-flex; align-items: center; gap: 6px;
   font-family: var(--pixel); letter-spacing: 0.2px; font-size: 13px;
   color: var(--muted);
   padding: 6px 14px; border-radius: 8px;
   border: 2px solid transparent;
   background: transparent;
+  white-space: nowrap; /* 좁아져도 라벨이 중간에 꺾이지 않게 */
+}
+
+/* 모바일 — 로고 줄 아래에 앱 탭바처럼 5등분 한 줄: 아이콘 위, 글자 아래.
+   스크롤도 어중간한 줄바꿈도 없이 어떤 폰 폭에도 5개가 다 들어간다. */
+@media (max-width: 640px) {
+  .nav { padding: 10px 12px 8px; }
+  .nav-inner { flex-direction: column; align-items: stretch; gap: 8px; }
+  .nav-links { display: flex; gap: 4px; }
+  .nav-link {
+    flex: 1 1 0; min-width: 0;
+    flex-direction: column; gap: 2px;
+    padding: 6px 2px; font-size: 11px;
+  }
+  .nav-ico { font-size: 16px; line-height: 1; }
+  /* 세로 쌓기에선 배지가 옆에 낄 자리가 없다 — 앱처럼 탭 우상단 모서리로. */
+  .nav-badge { position: absolute; top: 0; right: 4px; margin-left: 0; }
 }
 .nav-link:hover { color: var(--text); background: var(--panel-2); text-decoration: none; }
 .nav-link.active {

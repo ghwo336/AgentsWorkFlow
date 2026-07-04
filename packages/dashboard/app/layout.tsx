@@ -18,11 +18,13 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en">
       <body>
         <nav className="nav">
-          <a href="/" className="logo" style={{ color: "var(--text)" }}>
-            <LogoMark size={26} />
-            <b>Agent Loop</b>
-          </a>
-          <NavLinks />
+          <div className="nav-inner">
+            <a href="/" className="logo" style={{ color: "var(--text)" }}>
+              <LogoMark size={26} />
+              <b>Agent Loop</b>
+            </a>
+            <NavLinks />
+          </div>
         </nav>
         {children}
       </body>
