@@ -270,7 +270,7 @@ export function LogoMark({ size = 26 }: { size?: number }) {
       shapeRendering="crispEdges"
       style={{ imageRendering: "pixelated", display: "block", flex: "0 0 auto" }}
       role="img"
-      aria-label="Agent Loop 마스코트"
+      aria-label="LoopWorks 마스코트"
     >
       {/* antenna */}
       {pxRect(6, 0, 4, 1, "#ffe08a")}
