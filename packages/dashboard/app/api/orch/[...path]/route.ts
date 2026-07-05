@@ -25,9 +25,11 @@ const ALLOW: Record<string, RegExp[]> = {
     /^\/data\/research-folders$/,
     /^\/data\/agents\/(harnesses|learned)$/,
     /^\/data\/learning\/proposals$/,
+    /^\/push\/public-key$/,
   ],
   POST: [
     /^\/runs$/,
+    /^\/push\/(subscribe|unsubscribe)$/,
     /^\/runs\/[^/]+\/(approve|resume|retry|intervene-chat|research-followup)$/,
     /^\/chat$/,
     /^\/data\/projects$/,

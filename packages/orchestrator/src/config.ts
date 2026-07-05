@@ -73,4 +73,9 @@ export const config = {
   // Optional test-runner reviewer: a shell command run in the working copy;
   // exit 0 = PASS. Adds a parallel "test" node to the verify fan-out.
   testCmd: process.env.TEST_CMD?.trim() || undefined,
+  // Web push (VAPID) — 대시보드 PWA로 승인 대기/완료/실패 알림을 쏜다.
+  // 키 미설정 = 푸시 기능 전체 비활성 (push.ts가 no-op).
+  vapidPublicKey: process.env.VAPID_PUBLIC_KEY?.trim() || undefined,
+  vapidPrivateKey: process.env.VAPID_PRIVATE_KEY?.trim() || undefined,
+  vapidSubject: process.env.VAPID_SUBJECT?.trim() || "mailto:ghwo336@gmail.com",
 };

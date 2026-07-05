@@ -9,6 +9,7 @@ import type {
   UsageRecord,
 } from "@agent-loop/shared/types";
 import { bus } from "./bus.js";
+import { notifyRunStatus } from "./push.js";
 import { updateRunStatus } from "./run-store.js";
 
 // Append a team-chat turn: persist to DB + broadcast so the dashboard's chat
@@ -164,6 +165,8 @@ export async function setStatus(
     status,
     ts: new Date().toISOString(),
   });
+  // 승인 대기/입력 필요/종결 상태는 웹 푸시로도 — fire-and-forget (push.ts).
+  notifyRunStatus(runId, status);
 }
 
 // Record one model invocation's token usage + API-equivalent cost in USD.

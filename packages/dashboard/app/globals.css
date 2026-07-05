@@ -90,6 +90,18 @@ a:hover { text-decoration: underline; }
   /* 세로 쌓기에선 배지가 옆에 낄 자리가 없다 — 앱처럼 탭 우상단 모서리로. */
   .nav-badge { position: absolute; top: 0; right: 4px; margin-left: 0; }
 }
+/* 푸시 알림 토글(🔔) — 데스크톱은 네비 오른쪽 끝, 모바일(세로 스택)은 탭바에
+   줄 하나를 더 만들지 않게 로고 줄 우상단에 겹쳐 앉힌다. */
+.push-toggle {
+  margin-left: auto;
+  background: none; border: none; cursor: pointer;
+  font-size: 16px; padding: 4px; line-height: 1;
+}
+@media (max-width: 640px) {
+  .nav { position: relative; }
+  .push-toggle { position: absolute; top: 12px; right: 12px; margin-left: 0; }
+}
+
 .nav-link:hover { color: var(--text); background: var(--panel-2); text-decoration: none; }
 .nav-link.active {
   color: var(--text); border-color: var(--accent);

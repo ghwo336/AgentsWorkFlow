@@ -8,6 +8,7 @@ import { clarify, interveneChatForRun } from "./chat.js";
 import { config } from "./config.js";
 import { registerAgentRoutes } from "./http-agents.js";
 import { registerDataRoutes } from "./http-data.js";
+import { registerPushRoutes } from "./http-push.js";
 import { followUpResearch, resolveApproval, resolveInput, retryRun, startRun } from "./runner.js";
 import { sweepOrphans } from "./startup-sweep.js";
 import { assertAllowedTargetDir, TargetDirError } from "./workspace-path.js";
@@ -43,6 +44,9 @@ registerDataRoutes(app);
 
 // Agent roster/harness API (file-backed) for the dashboard's 팀 소개.
 registerAgentRoutes(app);
+
+// Web push subscriptions (dashboard PWA notifications).
+registerPushRoutes(app);
 
 // Start a new run.
 const StartSchema = z.object({

@@ -83,6 +83,16 @@ const postJson = <T>(url: string, body: unknown, errLabel: string) =>
 export const api = {
   listProjects: () => getJson<ProjectSummary[]>("/api/orch/data/projects", "프로젝트 목록 로드 실패"),
 
+  // ── 웹 푸시 (PushToggle) ──────────────────────────────────────────────
+  // key=null이면 서버에 VAPID 키가 없어 푸시가 꺼진 상태다.
+  pushPublicKey: () => getJson<{ key: string | null }>("/api/orch/push/public-key", "푸시 키 로드 실패"),
+
+  pushSubscribe: (sub: { endpoint: string; keys: { p256dh: string; auth: string } }) =>
+    postJson<unknown>("/api/orch/push/subscribe", sub, "푸시 구독 실패"),
+
+  pushUnsubscribe: (endpoint: string) =>
+    postJson<unknown>("/api/orch/push/unsubscribe", { endpoint }, "푸시 구독 해지 실패"),
+
   createProject: (name: string) =>
     postJson<{ name: string }>("/api/orch/data/projects", { name }, "프로젝트 생성 실패"),
 
