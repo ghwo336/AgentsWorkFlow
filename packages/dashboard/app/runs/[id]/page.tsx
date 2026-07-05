@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { ERROR_STATUSES } from "@agent-loop/shared/types";
 import { ORCH_URL, orchHeaders } from "../../lib/server/orch";
 import { DiffView } from "./DiffView";
 import { agentById, agentForEvent, PixelAvatar, ROLE_COLOR } from "../../lib/agents";
@@ -48,7 +49,10 @@ export default async function RunDetail({
         {run.commit && (
           <p className="small">✅ committed <code>{run.commit}</code></p>
         )}
-        {run.error && <p className="small" style={{ color: "var(--red)" }}>{run.error}</p>}
+        {/* 실패류 상태에서만 — 재개 후 성공한 run의 옛 실패 메시지는 잔재다. */}
+        {run.error && ERROR_STATUSES.has(run.status) && (
+          <p className="small" style={{ color: "var(--red)" }}>{run.error}</p>
+        )}
       </div>
 
       {run.plan && (

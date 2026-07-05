@@ -147,7 +147,11 @@ export function RunProgress({ detail }: { detail: RunDetail }) {
   const auditOnly = mode === "verifyOnly";
   const firstBuilder = roster.builderIds[0] ? agentById(roster.builderIds[0]) : undefined;
 
-  const planStep = detail.steps.find((s) => s.kind === "plan") ?? null;
+  // 재개로 기획을 다시 돌면 plan 스텝이 여럿 쌓인다 — 배지는 마지막(현행) 기획
+  // 기준. 첫 스텝을 보면 재시작 sweep이 실패 처리한 옛 기획이 영원히 남는다.
+  // 회고도 plan-kind로 기록되므로(타임라인 인라인용) 배지 계산에선 제외한다.
+  const planStep =
+    detail.steps.filter((s) => s.kind === "plan" && s.label !== "회고").at(-1) ?? null;
   const groups = groupByPlanStep(detail.steps);
   const descriptions = planStepDescriptions(detail);
   const total = planStepTotal(detail.steps) || descriptions.length;

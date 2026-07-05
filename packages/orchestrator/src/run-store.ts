@@ -1,5 +1,6 @@
 import { prisma } from "./db.js";
 import { parseAgents } from "@agent-loop/shared/roster";
+import { ERROR_STATUSES } from "@agent-loop/shared/types";
 
 // ALL writes to the Run table live in this module — the class methods below and
 // this status update (delegated to by events.setStatus, which owns only the
@@ -9,7 +10,11 @@ export function updateRunStatus(
   status: string,
   extra: Partial<{ plan: string; commit: string; error: string; targetDir: string }> = {}
 ): Promise<unknown> {
-  return prisma.run.update({ where: { id: runId }, data: { status, ...extra } });
+  // 정상 상태로의 전환은 이전 실패 메시지를 함께 지운다 — 재시작 sweep이 남긴
+  // "중단됨"이 재개 후 committed까지 따라붙던 문제. 실패류 전환은 호출부가
+  // 실어 보내는 error를 그대로 쓴다.
+  const clearStale = ERROR_STATUSES.has(status) ? {} : { error: null };
+  return prisma.run.update({ where: { id: runId }, data: { status, ...clearStale, ...extra } });
 }
 
 // Parse a Run.planSteps JSON column into descriptions (shared by resume/stuck).

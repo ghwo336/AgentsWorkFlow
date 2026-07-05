@@ -7,6 +7,7 @@ import {
   seatsOf,
   type RosterRole,
 } from "../../../lib/agents";
+import { ERROR_STATUSES } from "@agent-loop/shared/types";
 import type { Run, RunDetail } from "../../../lib/types";
 import { StatusBadge } from "./StatusBadge";
 
@@ -88,7 +89,8 @@ export function RunDetailCard({ detail }: { detail: RunDetail }) {
           ✅ committed <code>{detail.commit.slice(0, 10)}</code>
         </div>
       )}
-      {detail.error && (
+      {/* 실패류 상태에서만 — 재개 후 성공한 run의 옛 실패 메시지는 잔재다. */}
+      {detail.error && ERROR_STATUSES.has(detail.status) && (
         <div className="small" style={{ marginTop: 6, color: "var(--red)" }}>
           {detail.error}
         </div>

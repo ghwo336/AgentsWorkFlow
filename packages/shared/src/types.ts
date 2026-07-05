@@ -13,6 +13,11 @@ export type RunStatus =
   | "failed"
   | "cancelled";
 
+// Run.error가 실제 상황을 말해주는 상태들. 이 밖의 상태로 전환할 때 error가
+// 남아 있으면 재개 전 실패의 잔재다 — 쓰기(run-store)와 표시(대시보드)가 같은
+// 기준을 공유한다.
+export const ERROR_STATUSES: ReadonlySet<string> = new Set(["failed", "rejected", "needs_input"]);
+
 export type Phase =
   | "plan"
   | "approval"

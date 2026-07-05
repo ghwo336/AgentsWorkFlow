@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ERROR_STATUSES } from "@agent-loop/shared/types";
 import { agentById, PixelAvatar, ROLE_COLOR } from "../lib/agents";
 import { api } from "../lib/api";
 import { errMsg } from "../lib/err";
@@ -136,7 +137,8 @@ export function ResearchThread({
         )}
       </div>
 
-      {detail.error && (
+      {/* 실패류 상태에서만 — 재질문으로 살아난 스레드의 옛 실패 메시지는 잔재다. */}
+      {detail.error && ERROR_STATUSES.has(detail.status) && (
         <div className="small" style={{ color: "var(--red)", marginTop: 8, whiteSpace: "pre-wrap" }}>
           {detail.error}
         </div>
