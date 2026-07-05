@@ -3,6 +3,7 @@ import { ERROR_STATUSES } from "@agent-loop/shared/types";
 import { ORCH_URL, orchHeaders } from "../../lib/server/orch";
 import { DiffView } from "./DiffView";
 import { agentById, agentForEvent, PixelAvatar, ROLE_COLOR } from "../../lib/agents";
+import { fmtDateTime, fmtTimeOfDay } from "../../lib/time";
 
 export const dynamic = "force-dynamic";
 
@@ -92,7 +93,7 @@ export default async function RunDetail({
                   {v.passed ? "PASS" : "FAIL"}
                 </span>
               </span>
-              <span className="muted small">{new Date(v.ts).toLocaleString()}</span>
+              <span className="muted small">{fmtDateTime(v.ts)}</span>
             </div>
             <p className="small" style={{ whiteSpace: "pre-wrap" }}>{v.reason}</p>
             {v.diff && <DiffView diff={v.diff} />}
@@ -117,7 +118,7 @@ export default async function RunDetail({
                 <span className={`msg${ev.level === "error" ? " err" : ev.level === "warn" ? " warn" : ""}`}>
                   {ev.message}
                 </span>
-                <span className="muted small ts">{new Date(ev.ts).toLocaleTimeString()}</span>
+                <span className="muted small ts">{fmtTimeOfDay(ev.ts)}</span>
               </div>
             );
           })}

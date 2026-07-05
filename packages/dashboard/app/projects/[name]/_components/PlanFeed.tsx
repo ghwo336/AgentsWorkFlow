@@ -5,6 +5,7 @@ import { agentById } from "../../../lib/agents";
 import { api } from "../../../lib/api";
 import { Markdown } from "../../../lib/Markdown";
 import type { PlanFeedRun } from "../../../lib/types";
+import { fmtShort as fmtTime } from "../../../lib/time";
 
 // 기획 스레드 — 프로젝트의 기획 활동 전체를 하나의 대화 피드로 그린다:
 // 내 요청(말풍선) → 호재의 계획(단계 요약 카드, 전문은 펼침) → 수정 요청
@@ -14,12 +15,6 @@ import type { PlanFeedRun } from "../../../lib/types";
 // 정한다 (승인 대기 = 수정 요청, 막힘 = 지침, 끝난 작업 = 후속 기획).
 // 사용자는 "뭘 추가해/고쳐줘"라고 말만 하면 되고, 라우팅은 시스템 몫이다.
 // 클릭으로 끝나는 결정(승인·거절·재시도·커밋 등)만 해당 카드 안 버튼으로.
-
-const fmtTime = (iso: string) => {
-  const d = new Date(iso);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getMonth() + 1}/${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`;
-};
 
 const parseJsonArr = (json?: string | null): (string | null)[] => {
   if (!json) return [];

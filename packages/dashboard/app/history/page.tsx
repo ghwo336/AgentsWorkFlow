@@ -1,4 +1,5 @@
 import { orchJson } from "../lib/server/orch";
+import { fmtDateTime } from "../lib/time";
 
 export const dynamic = "force-dynamic";
 
@@ -46,7 +47,7 @@ export default async function HistoryPage() {
                   {r.commit ? <code>{r.commit.slice(0, 10)}</code> : <span className="muted">—</span>}
                 </td>
                 <td className="muted small">
-                  {new Date(r.createdAt).toLocaleString()}
+                  {fmtDateTime(r.createdAt)}
                 </td>
               </tr>
             ))}
