@@ -105,7 +105,22 @@ export default async function UsagePage({
 
   const byEngine = groupBy(rows, (r) => r.engine);
   const byModel = groupBy(rows, (r) => `${r.engine}__${r.model}`);
-  const byAgent = groupBy(rows, agentKeyOf);
+  // 리더보드 — 토큰 많이 쓴 순. 다른 표는 비용순이지만 여기선 "누가 제일
+  // 많이 굴렀나"가 관심사라 토큰이 기준. 레거시 팀 버킷(담당자 스탬프 이전
+  // 기록)은 개인이 아니므로 순위 없이 하단에 참고용으로만 붙인다.
+  const byAgent = groupBy(rows, agentKeyOf).sort(
+    (a, b) => sum(b[1], tokensOf) - sum(a[1], tokensOf)
+  );
+  const leaderboard = [
+    ...byAgent.filter(([k]) => !LEGACY_LABEL[k]).map(([k, ar], i) => ({ key: k, rows: ar, rank: i + 1 as number | null })),
+    ...byAgent.filter(([k]) => LEGACY_LABEL[k]).map(([k, ar]) => ({ key: k, rows: ar, rank: null as number | null })),
+  ];
+  // 점유율 분모는 순위에 오른 에이전트들의 합 — 레거시 팀 버킷이 전체의 9할이라
+  // 전체 기준으로 하면 현역 바가 전부 0%대로 뭉개진다.
+  const rankedTokens = sum(
+    leaderboard.filter((e) => e.rank !== null).flatMap((e) => e.rows),
+    tokensOf
+  );
   const byProject = groupBy(allRows, (r) => r.project);
   // 프로젝트별 표의 엔진 컬럼 — 실제 기록에 있는 엔진만 (하드코딩하면 새
   // 엔진(grok 등)이 추가될 때마다 이 표가 거짓말을 한다).
@@ -128,7 +143,7 @@ export default async function UsagePage({
           <b>💰 토큰 사용량 &amp; 비용 (API 환산)</b>
           <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
             <Chip label="📊 모델별" href={href(project)} active={!agentView} />
-            <Chip label="👥 에이전트별" href={href(project, "agents")} active={agentView} />
+            <Chip label="🏆 리더보드" href={href(project, "agents")} active={agentView} />
           </div>
         </div>
         <div className="row" style={{ gap: 8, flexWrap: "wrap", marginTop: 10 }}>
@@ -163,16 +178,19 @@ export default async function UsagePage({
         ))}
       </div>
 
-      {/* Per-agent breakdown (에이전트별 탭) */}
+      {/* 에이전트 리더보드 (리더보드 탭) */}
       {agentView && (
         <div className="panel">
-          <b>에이전트별 사용량</b>
+          <b>🏆 에이전트 리더보드</b>
+          <span className="muted small" style={{ marginLeft: 8 }}>토큰 많이 쓴 순</span>
           <div className="table-scroll">
             <table style={{ marginTop: 12 }}>
               <thead>
                 <tr>
+                  <th style={{ textAlign: "center" }}>순위</th>
                   <th>에이전트</th>
                   <th>직책</th>
+                  <th>점유율</th>
                   <th style={{ textAlign: "right" }}>Input</th>
                   <th style={{ textAlign: "right" }}>Output</th>
                   <th style={{ textAlign: "right" }}>Cache R/W</th>
@@ -181,10 +199,21 @@ export default async function UsagePage({
                 </tr>
               </thead>
               <tbody>
-                {byAgent.map(([key, ar]) => {
+                {leaderboard.map(({ key, rows: ar, rank }) => {
                   const agent = agentOf(key);
+                  const tok = sum(ar, tokensOf);
+                  const pct = rank !== null && rankedTokens > 0 ? (tok / rankedTokens) * 100 : null;
                   return (
                     <tr key={key}>
+                      <td style={{ textAlign: "center" }}>
+                        {rank === null ? (
+                          <span className="muted">—</span>
+                        ) : rank <= 3 ? (
+                          <span style={{ fontSize: 18 }}>{["🥇", "🥈", "🥉"][rank - 1]}</span>
+                        ) : (
+                          <b className="muted">{rank}</b>
+                        )}
+                      </td>
                       <td>
                         {agent ? (
                           <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
@@ -198,12 +227,34 @@ export default async function UsagePage({
                       <td className="muted small">
                         {agent ? `${agent.roleLabel} · ${agent.engineLabel}` : "에이전트 기록 이전 데이터"}
                       </td>
+                      <td style={{ minWidth: 130 }}>
+                        {pct === null ? (
+                          <span className="muted">—</span>
+                        ) : (
+                          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ flex: 1, height: 8, background: "var(--border)", borderRadius: 4, overflow: "hidden" }}>
+                              <span
+                                style={{
+                                  display: "block",
+                                  width: `${pct}%`,
+                                  height: "100%",
+                                  borderRadius: 4,
+                                  background: agent ? ROLE_COLOR[agent.role] : "var(--muted)",
+                                }}
+                              />
+                            </span>
+                            <span className="muted small" style={{ width: 40, textAlign: "right" }}>
+                              {pct.toFixed(pct > 0 && pct < 10 ? 1 : 0)}%
+                            </span>
+                          </span>
+                        )}
+                      </td>
                       <td style={{ textAlign: "right" }}>{fmtTok(sum(ar, (r) => r.inputTokens))}</td>
                       <td style={{ textAlign: "right" }}>{fmtTok(sum(ar, (r) => r.outputTokens))}</td>
                       <td style={{ textAlign: "right" }} className="muted">
                         {fmtTok(sum(ar, (r) => r.cacheRead))} / {fmtTok(sum(ar, (r) => r.cacheWrite))}
                       </td>
-                      <td style={{ textAlign: "right" }}>{fmtTok(sum(ar, tokensOf))}</td>
+                      <td style={{ textAlign: "right" }}>{fmtTok(tok)}</td>
                       <td style={{ textAlign: "right" }}>{fmtUsd(sum(ar, (r) => r.costUsd))}</td>
                     </tr>
                   );
